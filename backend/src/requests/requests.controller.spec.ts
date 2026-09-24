@@ -2,6 +2,8 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { RequestsController } from './requests.controller';
 import { RequestsService } from './requests.service';
+import { MailService } from '../mail/mail.service';
+import { NotificationsGateway } from '../notifications/notifications.gateway';
 import { Request } from './entities/request.entity';
 import { Skill } from '../skills/entities/skill.entity';
 
@@ -32,6 +34,18 @@ describe('RequestsController', () => {
         {
           provide: getRepositoryToken(Skill),
           useValue: mockSkillRepository,
+        },
+        {
+          provide: MailService,
+          useValue: { sendUserNotification: jest.fn() },
+        },
+        {
+          provide: NotificationsGateway,
+          useValue: {
+            notifyNewRequest: jest.fn(),
+            notifyRequestAccepted: jest.fn(),
+            notifyRequestRejected: jest.fn(),
+          },
         },
       ],
     }).compile();

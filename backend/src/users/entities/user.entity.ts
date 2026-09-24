@@ -6,6 +6,7 @@ import {
   JoinTable,
   ManyToMany,
   ManyToOne,
+  OneToMany,
   PrimaryGeneratedColumn,
 } from 'typeorm';
 import { Role } from '../../shared/enums/role.enum';
@@ -27,7 +28,7 @@ export class User {
   password: string;
 
   @Column('text', { nullable: true })
-  name: string;
+  name: string | null;
 
   @Column('text', { nullable: true })
   about: string;
@@ -66,4 +67,7 @@ export class User {
     inverseJoinColumn: { name: 'skill_id', referencedColumnName: 'id' },
   })
   favoriteSkills: Skill[];
+
+  @OneToMany(() => Skill, (skill) => skill.user)
+  skills: Skill[];
 }

@@ -19,6 +19,7 @@ import { SkillDetails } from "../../../../widgets/skill-details";
 import { useDispatch, useSelector } from "../../../../services/store";
 import {
   selectCategories,
+  selectSubCategories,
   selectSubCategoriesByCategoryId,
 } from "../../../../services/category/slice";
 import {
@@ -41,10 +42,12 @@ export const SkillRegister: FC<SkillRegisterProps> = ({
   onBack,
   onSubmit,
   errorText,
+  isEditing = false,
 }) => {
   const dispatch = useDispatch();
 
   const categories = useSelector(selectCategories);
+  const subCategories = useSelector(selectSubCategories);
   const getSubcategoriesByCategoryId = useSelector(
     selectSubCategoriesByCategoryId,
   );
@@ -57,9 +60,30 @@ export const SkillRegister: FC<SkillRegisterProps> = ({
   }, [dispatch]);
 
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
-  const [selectedCategory, setSelectedCategory] = useState<OptionType | null>(
-    null,
-  );
+  const [manualSelectedCategory, setManualSelectedCategory] = useState<
+    OptionType | null | undefined
+  >(undefined);
+
+  const derivedSelectedCategory = useMemo(() => {
+    if (!skillSubcategory) return null;
+
+    const subcategoryRecord = subCategories.find(
+      (sub) => sub.id === skillSubcategory.value,
+    );
+    if (!subcategoryRecord) return null;
+
+    const categoryRecord = categories.find(
+      (cat) => cat.id === subcategoryRecord.skillCategoryId,
+    );
+    if (!categoryRecord) return null;
+
+    return { value: categoryRecord.id, title: categoryRecord.name };
+  }, [skillSubcategory, subCategories, categories]);
+
+  const selectedCategory =
+    manualSelectedCategory !== undefined
+      ? manualSelectedCategory
+      : derivedSelectedCategory;
 
   const categoryOptions: OptionType[] = useMemo(() => {
     return categories.map((cat) => ({ value: cat.id, title: cat.name }));
@@ -75,7 +99,7 @@ export const SkillRegister: FC<SkillRegisterProps> = ({
   }, [selectedCategory, getSubcategoriesByCategoryId]);
 
   const handleCategoryChange = (option: OptionType | null) => {
-    setSelectedCategory(option);
+    setManualSelectedCategory(option);
     setSkillSubcategory(null);
   };
 
@@ -117,7 +141,7 @@ export const SkillRegister: FC<SkillRegisterProps> = ({
   return (
     <>
       <AuthLayout
-        type="register"
+        type="other"
         currentStep={3}
         totalSteps={3}
         image={schoolBoard}
@@ -125,6 +149,7 @@ export const SkillRegister: FC<SkillRegisterProps> = ({
           title: "Укажите, чем вы готовы поделиться",
           text: "Так другие люди смогут увидеть ваши предложения и предложить вам обмен!",
         }}
+        title={isEditing ? "Редактируйте навык" : "Создайте навык"}
       >
         <form className={styles.form} name="register" onSubmit={handleSubmit}>
           <div className={styles.fields}>
@@ -182,7 +207,7 @@ export const SkillRegister: FC<SkillRegisterProps> = ({
               className={styles.button}
               disabled={isDisabled}
             >
-              Продолжить
+              {isEditing ? "Сохранить" : "Продолжить"}
             </Button>
           </div>
           {errorText && !USE_TOAST && (

@@ -1,12 +1,11 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Icon } from "../../../shared/ui/icon";
-import { ECity } from "../../../shared/constants/cities";
+import { Search } from "../../../shared/ui/search";
+import { getCities, type ICity } from "../../../api/cityApi";
 import type { TCityCheckboxGroupProps } from "./types";
 import styles from "./checkbox-group.module.css";
 
-const CITIES_LIST: string[] = Object.values(ECity);
-
-// Сколько городов показывать до включения скролла
+// Сколько городов показывать до нажатия "Все города"
 const VISIBLE_CITIES_COUNT = 5;
 
 export const CityCheckboxGroup: React.FC<TCityCheckboxGroupProps> = ({
@@ -14,11 +13,50 @@ export const CityCheckboxGroup: React.FC<TCityCheckboxGroupProps> = ({
   onChange,
 }) => {
   const [showAll, setShowAll] = useState(false);
+  const [cities, setCities] = useState<ICity[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [isSearchActive, setIsSearchActive] = useState(false);
 
-  const handleCityChange = (city: string) => {
-    const newValue = value.includes(city)
-      ? value.filter((c) => c !== city)
-      : [...value, city];
+  const loadCities = async (search?: string) => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const results = search
+        ? await getCities(search)
+        : await getCities(undefined, { major: true });
+      setCities(results);
+    } catch (err) {
+      console.error("Не удалось загрузить города", err);
+      setCities([]);
+      setError("Не удалось загрузить список городов");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadCities();
+  }, []);
+
+  const handleSearch = (query: string) => {
+    const trimmed = query.trim();
+    setIsSearchActive(Boolean(trimmed));
+    setShowAll(false);
+    loadCities(trimmed || undefined);
+  };
+
+  const handleClearSearch = () => {
+    setIsSearchActive(false);
+    setShowAll(false);
+    loadCities();
+  };
+
+  const handleCityChange = (cityName: string) => {
+    const newValue = value.includes(cityName)
+      ? value.filter((c) => c !== cityName)
+      : [...value, cityName];
     onChange?.(newValue);
   };
 
@@ -27,42 +65,55 @@ export const CityCheckboxGroup: React.FC<TCityCheckboxGroupProps> = ({
   };
 
   const visibleCities = showAll
-    ? CITIES_LIST
-    : CITIES_LIST.slice(0, VISIBLE_CITIES_COUNT);
-  const hasMoreCities = CITIES_LIST.length > VISIBLE_CITIES_COUNT;
+    ? cities
+    : cities.slice(0, VISIBLE_CITIES_COUNT);
+  const hasMoreCities = cities.length > VISIBLE_CITIES_COUNT;
 
   return (
     <div className={styles.container}>
-      <h3 className={styles.title}>Город</h3>
+      <Search
+        onSearch={handleSearch}
+        onClear={handleClearSearch}
+        placeholder="Город"
+        aria-label="Поиск города"
+      />
 
       <div className={styles.checkboxgroup}>
-        {visibleCities.map((city) => {
-          const isChecked = value.includes(city);
+        {isLoading && cities.length === 0 ? (
+          <p className={styles.label}>Загрузка...</p>
+        ) : cities.length === 0 ? (
+          <p className={styles.label}>
+            {error ?? (isSearchActive ? "Города не найдены" : "Нет доступных городов")}
+          </p>
+        ) : (
+          visibleCities.map((city) => {
+            const isChecked = value.includes(city.name);
 
-          return (
-            <label key={city} className={styles.option}>
-              <input
-                type="checkbox"
-                value={city}
-                checked={isChecked}
-                onChange={() => handleCityChange(city)}
-                className={styles.input}
-              />
-              <span className={styles.checkbox}>
-                <Icon
-                  name={isChecked ? "checkbox-done" : "checkbox-empty"}
-                  size={20}
-                  aria-hidden="true"
+            return (
+              <label key={city.id} className={styles.option}>
+                <input
+                  type="checkbox"
+                  value={city.name}
+                  checked={isChecked}
+                  onChange={() => handleCityChange(city.name)}
+                  className={styles.input}
                 />
-              </span>
-              <span className={styles.label}>{city}</span>
-            </label>
-          );
-        })}
+                <span className={styles.checkbox}>
+                  <Icon
+                    name={isChecked ? "checkbox-done" : "checkbox-empty"}
+                    size={20}
+                    aria-hidden="true"
+                  />
+                </span>
+                <span className={styles.label}>{city.name}</span>
+              </label>
+            );
+          })
+        )}
       </div>
 
       {/* Кнопка "Все города" — показываем, если городов больше чем VISIBLE_CITIES_COUNT */}
-      {hasMoreCities && (
+      {!isLoading && hasMoreCities && (
         <button
           type="button"
           className={styles["see-all-button"]}

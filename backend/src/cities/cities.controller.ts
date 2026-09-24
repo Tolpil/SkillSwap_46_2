@@ -12,6 +12,7 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
 import { CitiesService } from './cities.service';
 import { CityShort } from './cities.types';
 import { AccessTokenGuard } from 'src/auth/guards/accessToken.guard';
@@ -21,20 +22,35 @@ import { Role } from 'src/shared/enums/role.enum';
 import { UpdateCityDto } from './dto/update-city.dto';
 import { CreateCityDto } from './dto/create-city.dto';
 import { City } from './entities/city.entity';
+import {
+  ApiCitiesCreate,
+  ApiCitiesFindAll,
+  ApiCitiesRemove,
+  ApiCitiesUpdate,
+} from './cities.swagger';
 
+@ApiTags('cities')
 @Controller('cities')
 export class CitiesController {
   constructor(private readonly citiesService: CitiesService) {}
 
   @Get()
-  async findAll(@Query('search') search?: string): Promise<CityShort[]> {
-    return this.citiesService.search(search);
+  @ApiCitiesFindAll()
+  async findAll(
+    @Query('search') search?: string,
+    @Query('major') major?: string,
+  ): Promise<CityShort[]> {
+    return this.citiesService.search({
+      search,
+      major: major === 'true',
+    });
   }
 
   @Delete(':id')
   @UseGuards(AccessTokenGuard, RolesGuard)
   @Roles([Role.ADMIN])
   @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiCitiesRemove()
   async remove(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
     await this.citiesService.remove(id);
   }
@@ -42,6 +58,7 @@ export class CitiesController {
   @Patch(':id')
   @UseGuards(AccessTokenGuard, RolesGuard)
   @Roles([Role.ADMIN])
+  @ApiCitiesUpdate()
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateCityDto,
@@ -52,6 +69,7 @@ export class CitiesController {
   @Post()
   @UseGuards(AccessTokenGuard, RolesGuard)
   @Roles([Role.ADMIN])
+  @ApiCitiesCreate()
   create(@Body() dto: CreateCityDto): Promise<City> {
     return this.citiesService.create(dto);
   }

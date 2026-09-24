@@ -6,9 +6,10 @@ import {
   type SyntheticEvent,
 } from "react";
 import { format, subYears, isBefore, isAfter, parse } from "date-fns";
-import { cityOptions, genderOptions, type AuthorRegisterProps } from "./types";
+import { genderOptions, type AuthorRegisterProps } from "./types";
 import styles from "./author-register.module.css";
 import userInfo from "../../../../assets/images/user-info.svg";
+import { resolveAssetUrl } from "../../../lib/resolveAssetUrl";
 import { Button } from "../../button";
 import { BasicInput } from "../../input/basic-input";
 import { AuthLayout } from "../../auth-layout";
@@ -25,21 +26,16 @@ import {
   fetchCategories,
   fetchSubCategories,
 } from "../../../../services/category/actions";
-import { useImageUpload } from "../../../hooks/useImageUpload";
-
-const CATEGORY_CSS_VARS: Record<string, string> = {
-  "Творчество и искусство": "var(--color-category-creative)",
-  "Иностранные языки": "var(--color-category-languages)",
-  "Бизнес и карьера": "var(--color-category-business)",
-  "Образование и развитие": "var(--color-category-education)",
-  "Дом и уют": "var(--color-category-home)",
-  "Здоровье и лайфстайл": "var(--color-category-health)",
-  other: "var(--color-tag-plus)",
-};
+import { useDebounce } from "../../../hooks/useDebounce";
+import { getCities, type ICity } from "../../../../api/cityApi";
+import { validateImageFile } from "../../../../api/imageApi";
+import { showToast } from "../../../../utils/toast";
+import { USE_TOAST } from "../../../../config/apiConfig";
 
 export const AuthorRegister: FC<AuthorRegisterProps> = ({
   avatar,
   setAvatar,
+  setAvatarFile,
   name,
   setName,
   birthDate,
@@ -48,10 +44,10 @@ export const AuthorRegister: FC<AuthorRegisterProps> = ({
   setGender,
   city,
   setCity,
-  learningSkills,
   setLearningSkills,
   onNext,
   onBack,
+  errorText,
 }) => {
   const dispatch = useDispatch();
 
@@ -65,7 +61,39 @@ export const AuthorRegister: FC<AuthorRegisterProps> = ({
     dispatch(fetchSubCategories());
   }, [dispatch]);
 
-  const { uploadSingle } = useImageUpload();
+  const [citySearch, setCitySearch] = useState("");
+  const [cities, setCities] = useState<ICity[]>([]);
+
+  const debouncedCitySearch = useDebounce(citySearch, 300);
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    const loadCities = async () => {
+      try {
+        const results = await getCities(debouncedCitySearch || undefined);
+        if (!isCancelled) {
+          setCities(results);
+        }
+      } catch (err) {
+        console.error("Не удалось загрузить города", err);
+        if (!isCancelled) {
+          setCities([]);
+        }
+      }
+    };
+
+    loadCities();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [debouncedCitySearch]);
+
+  const cityOptions = useMemo(
+    () => cities.map((c) => ({ value: c.id, title: c.name })),
+    [cities],
+  );
 
   const [selectedCategory, setSelectedCategory] = useState<OptionType | null>(
     null,
@@ -105,89 +133,56 @@ export const AuthorRegister: FC<AuthorRegisterProps> = ({
     const input = document.createElement("input");
     input.type = "file";
     input.accept = "image/*";
-    input.onchange = async (e) => {
+    input.onchange = (e) => {
       const file = (e.target as HTMLInputElement).files?.[0];
-      if (file) {
-        const result = await uploadSingle(file);
-        if (result?.url) {
-          setAvatar(result.url);
-        }
+      if (!file) return;
+
+      const validationError = validateImageFile(file);
+      if (validationError) {
+        showToast(validationError, "error");
+        return;
       }
+
+      setAvatarFile(file);
+      setAvatar(URL.createObjectURL(file));
     };
     input.click();
   };
 
-  const availableCategories = useMemo(() => {
-    return categories.filter((category) => {
-      const allSubcategories = getSubcategoriesByCategoryId(category.id);
-      const availableSubs = allSubcategories.filter(
-        (sub) => !learningSkills.includes(sub.id),
-      );
-      return availableSubs.length > 0;
-    });
-  }, [categories, learningSkills, getSubcategoriesByCategoryId]);
+  const availableCategories = categories;
 
   const availableSubcategories = useMemo(() => {
     if (!selectedCategory) return [];
 
-    const allSubcategories = getSubcategoriesByCategoryId(
-      selectedCategory.value,
-    );
-
-    return allSubcategories
-      .filter((sub) => !learningSkills.includes(sub.id))
-      .map((sub) => ({
+    return getSubcategoriesByCategoryId(selectedCategory.value).map(
+      (sub) => ({
         value: sub.id,
         title: sub.name,
-      }));
-  }, [selectedCategory, learningSkills, getSubcategoriesByCategoryId]);
+      }),
+    );
+  }, [selectedCategory, getSubcategoriesByCategoryId]);
 
-  const handleAddSkill = () => {
-    if (!selectedSubcategory) return;
-
-    setLearningSkills((prev) => [...prev, String(selectedSubcategory.value)]);
-    setSelectedCategory(null);
+  const handleCategoryChange = (option: OptionType | null) => {
+    setSelectedCategory(option);
     setSelectedSubcategory(null);
+    setLearningSkills([]);
   };
 
-  const handleRemoveSkill = (subcategoryId: string) => {
-    setLearningSkills((prev) => prev.filter((id) => id !== subcategoryId));
+  const handleSubcategoryChange = (option: OptionType | null) => {
+    setSelectedSubcategory(option);
+    setLearningSkills(option ? [String(option.value)] : []);
   };
 
-  const getTagColor = (categoryName: string): string => {
-    return CATEGORY_CSS_VARS[categoryName] || CATEGORY_CSS_VARS.other;
+  const handleCitySearchChange = (search: string) => {
+    setCitySearch(search);
   };
 
-  const getSkillDisplay = (subcategoryId: string) => {
-    for (const category of categories) {
-      const subcategory = getSubcategoriesByCategoryId(category.id).find(
-        (sub) => sub.id === subcategoryId,
-      );
-
-      if (subcategory) {
-        return {
-          name: subcategory.name,
-          categoryName: category.name,
-          categoryId: category.id,
-        };
-      }
-    }
-
-    return {
-      name: "Неизвестная подкатегория",
-      categoryName: "",
-      categoryId: "other",
-    };
+  const handleCityChange = (option: OptionType | null) => {
+    setCity(option);
+    setCitySearch("");
   };
 
-  const isDisabled =
-    !name.trim() ||
-    !birthDate ||
-    Boolean(birthDateError) ||
-    !gender?.value ||
-    !city?.value ||
-    learningSkills.length === 0 ||
-    !avatar;
+  const isDisabled = !name.trim() || Boolean(birthDateError);
 
   const handleSubmit = (e: SyntheticEvent) => {
     e.preventDefault();
@@ -201,7 +196,7 @@ export const AuthorRegister: FC<AuthorRegisterProps> = ({
     <AuthLayout
       type="register"
       currentStep={2}
-      totalSteps={3}
+      totalSteps={2}
       image={userInfo}
       description={{
         title: "Расскажите немного о себе",
@@ -211,7 +206,7 @@ export const AuthorRegister: FC<AuthorRegisterProps> = ({
       <form className={styles.form} name="register" onSubmit={handleSubmit}>
         <div className={styles.fields}>
           <Avatar
-            src={avatar}
+            src={resolveAssetUrl(avatar)}
             size="large"
             isEditable={true}
             onEdit={handleAvatarEdit}
@@ -251,9 +246,10 @@ export const AuthorRegister: FC<AuthorRegisterProps> = ({
             placeholder="Не указан"
             options={cityOptions}
             selected={city}
-            onChange={setCity}
+            onChange={handleCityChange}
             searchable
             searchPlaceholder="Введите город"
+            onSearchChange={handleCitySearchChange}
           />
           <Dropdown
             title="Категория навыка, которому хотите научиться"
@@ -263,57 +259,21 @@ export const AuthorRegister: FC<AuthorRegisterProps> = ({
               title: cat.name,
             }))}
             selected={selectedCategory}
-            onChange={setSelectedCategory}
+            onChange={handleCategoryChange}
           />
           <Dropdown
             title="Подкатегория навыка, которому хотите научиться"
             placeholder="Выберите подкатегорию"
             options={availableSubcategories}
             selected={selectedSubcategory}
-            onChange={setSelectedSubcategory}
+            onChange={handleSubcategoryChange}
             disabled={!selectedCategory}
           />
-          <Button
-            type="button"
-            variant="primary"
-            onClick={handleAddSkill}
-            disabled={!selectedCategory || !selectedSubcategory}
-            className={styles.addButton}
-          >
-            Добавить
-          </Button>
-
-          {learningSkills.length > 0 && (
-            <div className={styles.selectedSkills}>
-              <h4 className={styles.selectedSkillsTitle}>Выбранные навыки:</h4>
-              <div className={styles.skillTags}>
-                {learningSkills.map((subcategoryId) => {
-                  const { name, categoryName } = getSkillDisplay(subcategoryId);
-                  const colorVar = getTagColor(categoryName);
-
-                  return (
-                    <div
-                      key={subcategoryId}
-                      className={styles.skillTag}
-                      style={{ backgroundColor: colorVar }}
-                    >
-                      <span className={styles.skillTagName}>{name}</span>
-                      <button
-                        type="button"
-                        className={styles.skillTagRemove}
-                        onClick={() => handleRemoveSkill(subcategoryId)}
-                        aria-label={`Удалить ${name}`}
-                      >
-                        ×
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
         </div>
         <div className={styles.buttons}>
+          {errorText && !USE_TOAST && (
+            <p className={styles.error}>{errorText}</p>
+          )}
           <Button
             variant="secondary"
             onClick={onBack}
@@ -327,7 +287,7 @@ export const AuthorRegister: FC<AuthorRegisterProps> = ({
             className={styles.button}
             disabled={isDisabled}
           >
-            Продолжить
+            Зарегистрироваться
           </Button>
         </div>
       </form>

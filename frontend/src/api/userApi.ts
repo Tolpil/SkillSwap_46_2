@@ -1,27 +1,43 @@
 import { USE_MOCKS } from "../config/apiConfig";
 import { request } from "./client";
-import type { IUserProfile } from "../utils/types";
+import type { IUserProfile, IUserProfileOnBackend } from "../utils/types";
 import type { TId } from "../utils/types";
-
+import type { IUpdateProfileData, IWantToLearnCategory } from "../utils/types";
 interface ApiResponse<T> {
   status: boolean;
   data: T;
 }
 
+export const formatUser = (user: IUserProfileOnBackend): IUserProfile => ({
+  id: user.id,
+  email: user.email,
+  name: user.name ?? "",
+  birthDate: user.birthdate ?? "",
+  gender: user.gender ?? "UNSPECIFIED",
+  city: user.city?.name ?? "",
+  avatar: user.avatar ?? "",
+  aboutMe: user.about ?? "",
+  likesSkillsIds: user.favoriteSkills?.map((skill) => skill.id) ?? [],
+  userSkill: undefined,
+  interestedSkillsSubcategoriesIds:
+    user.wantToLearn?.map((category) => category.id) ?? [],
+});
+
 // GET /users
 export const getUsers = (): Promise<IUserProfile[]> => {
   if (USE_MOCKS) {
-    return fetch("/users.json")
+    return fetch("/skills.json")
       .then((res) => res.json())
-      .then((response) => response.data);
+      .then((response) => (response.data ?? []));
   }
-  return request<ApiResponse<IUserProfile[]>>("/users").then(
-    (response: { status: boolean; data: IUserProfile[] }) => response.data,
+
+  return request<ApiResponse<IUserProfileOnBackend[]>>("/users").then(
+    (response) => response.data.map(formatUser),
   );
 };
 
 // GET /users/:id
-export const getUserById = (id: TId): Promise<IUserProfile> => {
+export const getUserById = async (id: TId): Promise<IUserProfile> => {
   if (USE_MOCKS) {
     return fetch("/users.json")
       .then((res) => res.json())
@@ -31,10 +47,18 @@ export const getUserById = (id: TId): Promise<IUserProfile> => {
         return user;
       });
   }
-  return request<ApiResponse<IUserProfile>>(`/users/${id}`).then(
-    (response: { status: boolean; data: IUserProfile }) => response.data,
+  return request<ApiResponse<IUserProfileOnBackend[]>>(`/users`).then(
+    (response) => {
+      const foundUser = response.data.find((u) => u.id === id);
+      if (!foundUser) {
+        return Promise.reject({ message: "User not found" });
+      }
+      const user = formatUser(foundUser);
+      return user;
+    },
   );
 };
+
 
 // PATCH /users/:id (требует токен)
 export const updateUser = (
@@ -81,3 +105,23 @@ export const deleteUser = (id: TId, token: string): Promise<void> => {
     },
   });
 };
+
+// PATCH /users/me — обновление своего профиля (куки, без id в URL)
+export const updateMyProfile = (
+  payload: IUpdateProfileData,
+): Promise<IUserProfile> =>
+  request<IUserProfile>("/users/me", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+// PATCH /users/me/want-to-learn — полная замена списка категорий "хочу научиться"
+export const updateWantToLearn = (
+  categoryIds: TId[],
+): Promise<IWantToLearnCategory[]> =>
+  request<IWantToLearnCategory[]>("/users/me/want-to-learn", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ categoryIds }),
+  });

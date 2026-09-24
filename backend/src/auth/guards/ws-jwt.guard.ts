@@ -47,8 +47,20 @@ export class WsJwtGuard implements CanActivate {
   }
 
   private extractToken(client: SocketWithUser): string | undefined {
-    const token = client.handshake.query?.token;
+    const cookieHeader = client.handshake.headers.cookie;
 
-    return typeof token === 'string' ? token : undefined;
+    if (!cookieHeader) {
+      return undefined;
+    }
+
+    const prefix = 'accessToken=';
+    const accessTokenCookie = cookieHeader
+      .split(';')
+      .map((part) => part.trim())
+      .find((part) => part.startsWith(prefix));
+
+    return accessTokenCookie
+      ? decodeURIComponent(accessTokenCookie.slice(prefix.length))
+      : undefined;
   }
 }

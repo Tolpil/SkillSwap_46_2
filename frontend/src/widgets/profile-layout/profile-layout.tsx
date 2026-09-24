@@ -31,6 +31,11 @@ export const ProfileLayout: FC<ProfileLayoutProps> = ({ children }) => {
             return;
           }
 
+          if (item.key === "mySkills") {
+            navigate("/skill/create", { state: { from: "/profile" } });
+            return;
+          }
+
           console.log(`Раздел пока не подключен: ${item.key}`);
         },
       })),

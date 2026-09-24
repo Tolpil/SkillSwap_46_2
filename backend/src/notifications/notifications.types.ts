@@ -7,5 +7,6 @@ export enum NotificationType {
 export type NotificationPayload = {
   type: NotificationType;
   skillName: string;
+  skillId?: string;
   fromUser: string;
 };

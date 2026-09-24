@@ -21,6 +21,9 @@ export class City {
   @Column({ length: 255 })
   region: string;
 
+  @Column({ type: 'int', nullable: true })
+  sortOrder: number | null;
+
   @CreateDateColumn()
   createdAt: Date;
 

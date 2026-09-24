@@ -21,6 +21,8 @@ export class SkillsService {
     private readonly skillsRepository: Repository<Skill>,
     @InjectRepository(Category)
     private readonly categoriesRepository: Repository<Category>,
+    @InjectRepository(User)
+    private readonly usersRepository: Repository<User>,
     private readonly usersService: UsersService,
   ) {}
 
@@ -45,10 +47,23 @@ export class SkillsService {
   }
 
   async findAll(dto: FindSkillsDto) {
-    const { page, limit, search } = dto;
+    const { page = 1, limit = 20, search = '' } = dto;
 
     const query = this.skillsRepository
       .createQueryBuilder('skill')
+      .select(['skill.id', 'skill.title', 'skill.createdAt'])
+      .leftJoin('skill.user', 'user')
+      .addSelect([
+        'user.id',
+        'user.name',
+        'user.avatar',
+        'user.birthdate',
+        'user.gender',
+      ])
+      .leftJoinAndSelect('user.city', 'city')
+      .leftJoinAndSelect('user.wantToLearn', 'wantToLearn')
+      .leftJoin('skill.category', 'category')
+      .addSelect(['category.id'])
       .where('LOWER(skill.title) LIKE LOWER(:search)', {
         search: `%${search}%`,
       })
@@ -56,22 +71,179 @@ export class SkillsService {
       .skip((page - 1) * limit)
       .take(limit);
 
-    const [data, total] = await query.getManyAndCount();
+    const [rawData, total] = await query.getManyAndCount();
     const totalPages = Math.ceil(total / limit);
 
     if (totalPages > 0 && page > totalPages) {
       throw new NotFoundException(`Запрашиваемая страница ${page} не найдена.`);
     }
 
+    const favoritesCounts = await this.getFavoritesCounts(
+      rawData.map((s) => s.id),
+    );
+
     return {
-      data,
+      data: rawData.map((skill) =>
+        this.mapToListItem(skill, favoritesCounts.get(skill.id) ?? 0),
+      ),
       page,
-      totalPages: Math.ceil(total / limit),
+      totalPages,
     };
   }
 
-  findOne(id: number) {
-    return `This action returns a #${id} skill`;
+  async getFavoriteSkills(userId: string) {
+    const rawData = await this.skillsRepository
+      .createQueryBuilder('skill')
+      .select(['skill.id', 'skill.title', 'skill.createdAt'])
+      .leftJoin('skill.user', 'user')
+      .addSelect([
+        'user.id',
+        'user.name',
+        'user.avatar',
+        'user.birthdate',
+        'user.gender',
+      ])
+      .leftJoinAndSelect('user.city', 'city')
+      .leftJoinAndSelect('user.wantToLearn', 'wantToLearn')
+      .leftJoin('skill.category', 'category')
+      .addSelect(['category.id'])
+      .where(
+        'skill.id IN (SELECT skill_id FROM user_favorite_skills WHERE user_id = :userId)',
+        { userId },
+      )
+      .orderBy('skill.createdAt', 'DESC')
+      .getMany();
+
+    const favoritesCounts = await this.getFavoritesCounts(
+      rawData.map((s) => s.id),
+    );
+
+    return rawData.map((skill) =>
+      this.mapToListItem(skill, favoritesCounts.get(skill.id) ?? 0),
+    );
+  }
+
+  private async getFavoritesCounts(
+    skillIds: string[],
+  ): Promise<Map<string, number>> {
+    if (skillIds.length === 0) return new Map();
+
+    const rows = await this.skillsRepository.manager
+      .createQueryBuilder()
+      .select('ufs.skill_id', 'skillId')
+      .addSelect('COUNT(*)', 'count')
+      .from('user_favorite_skills', 'ufs')
+      .where('ufs.skill_id IN (:...skillIds)', { skillIds })
+      .groupBy('ufs.skill_id')
+      .getRawMany<{ skillId: string; count: string }>();
+
+    return new Map(rows.map((r) => [r.skillId, parseInt(r.count, 10)]));
+  }
+
+  private mapToListItem(skill: Skill, favoritesCount: number) {
+    return {
+      id: skill.id,
+      title: skill.title,
+      createdAt: skill.createdAt,
+      categoryId: skill.category?.id ?? null,
+      favoritesCount,
+      user: {
+        id: skill.user.id,
+        name: skill.user.name,
+        avatar: skill.user.avatar,
+        age: this.calculateAge(skill.user.birthdate),
+        gender: skill.user.gender,
+        city: skill.user.city
+          ? { id: skill.user.city.id, name: skill.user.city.name }
+          : null,
+        wantToLearn: skill.user.wantToLearn.map((c) => ({
+          id: c.id,
+          name: c.name,
+        })),
+      },
+    };
+  }
+
+  private calculateAge(birthdate: Date | null): number | null {
+    if (!birthdate) return null;
+
+    const today = new Date();
+    const birth = new Date(birthdate);
+    let age = today.getFullYear() - birth.getFullYear();
+    const monthDiff = today.getMonth() - birth.getMonth();
+
+    if (
+      monthDiff < 0 ||
+      (monthDiff === 0 && today.getDate() < birth.getDate())
+    ) {
+      age -= 1;
+    }
+
+    return age >= 0 ? age : null;
+  }
+
+  async findOne(id: string) {
+    const skill = await this.skillsRepository.findOne({
+      where: { id },
+      relations: {
+        user: { city: true, wantToLearn: true },
+        category: { parent: true },
+      },
+    });
+
+    if (!skill) {
+      throw new NotFoundException(`Навык с id ${id} не найден`);
+    }
+
+    return {
+      id: skill.id,
+      title: skill.title,
+      description: skill.description,
+      images: skill.images || [],
+      createdAt: skill.createdAt,
+      category: {
+        id: skill.category.id,
+        name: skill.category.name,
+        parent: skill.category.parent
+          ? { id: skill.category.parent.id, name: skill.category.parent.name }
+          : null,
+      },
+      user: {
+        id: skill.user.id,
+        name: skill.user.name,
+        avatar: skill.user.avatar,
+        age: this.calculateAge(skill.user.birthdate),
+        about: skill.user.about,
+        city: skill.user.city
+          ? { id: skill.user.city.id, name: skill.user.city.name }
+          : null,
+        wantToLearn: (skill.user.wantToLearn || []).map((c) => ({
+          id: c.id,
+          name: c.name,
+        })),
+      },
+    };
+  }
+
+  async findSimilarUsers(skillId: string): Promise<User[]> {
+    const skill = await this.skillsRepository.findOne({
+      where: { id: skillId },
+      relations: { category: true },
+    });
+
+    if (!skill) {
+      throw new NotFoundException(`Skill with id ${skillId} not found`);
+    }
+
+    return this.usersRepository
+      .createQueryBuilder('user')
+      .innerJoin(Skill, 'skill', 'skill.owner_id = user.id')
+      .where('skill.category_id = :categoryId', {
+        categoryId: skill.category.id,
+      })
+      .distinct(true)
+      .take(10)
+      .getMany();
   }
 
   async update(ownerId: string, id: string, updateSkillDto: UpdateSkillDto) {

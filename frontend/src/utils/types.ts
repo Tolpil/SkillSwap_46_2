@@ -3,7 +3,17 @@
 export type TId = string;
 
 /** ПОЛ ПОЛЬЗОВАТЕЛЯ */
-export type TGender = "male" | "female" | "unspecified";
+export type TGender = "MALE" | "FEMALE" | "UNSPECIFIED";
+
+/** РОЛЬ ПОЛЬЗОВАТЕЛЯ */
+export type TRole = "USER" | "ADMIM";
+
+/** ГОРОД */
+export interface ICity {
+  id: string;
+  name: string;
+  region: string;
+}
 
 /** ПОЛЬЗОВАТЕЛЬ */
 export interface IUser {
@@ -17,20 +27,30 @@ export interface IUserProfile extends IUser {
   birthDate: string;
   gender?: TGender;
   city: string;
+  cityId?: TId | null;
   avatar: string;
   aboutMe?: string; // "о себе"
   likesSkillsIds: TId[]; // массив id навыков, которые лайкнул пользователь
-  userSkill: TId; // навык пользователя, которому он может научить
+  userSkill?: TId; // навык пользователя, которому он может научить
+  skills?: TId[]; // id всех навыков пользователя (owner_id = user.id), для currentUser — проверка "есть ли хотя бы один скилл"
   interestedSkillsSubcategoriesIds: TId[]; // id[] покатегорий, которым пользователь хочет научиться
-  createdAt: string;
-  updatedAt: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
-/** ПОДКАТЕГОРИЯ НАВЫКОВ */
-export interface ISkillsSubcategory {
-  id: TId;
-  name: string;
-  skillCategoryId: TId; // id родительской категории
+/** ПРОФИЛЬ ПОЛЬЗОВАТЕЛЯ НА БЭКЕ */ 
+export interface IUserProfileOnBackend {
+  id: string;
+  email: string;
+  name?: string;
+  about?: string;
+  birthdate?: string;
+  city?: ICity;
+  gender?: TGender;
+  avatar?: string;
+  role: TRole;
+  wantToLearn: ISkillsSubcategory[];
+  favoriteSkills: ISkill[];
 }
 
 /** КАТЕГОРИЯ НАВЫКОВ */
@@ -38,6 +58,16 @@ export interface ISkillsCategory {
   id: TId;
   name: string;
   subcategories: ISkillsSubcategory[];
+  wantToLearnUsers: IUser[];
+  skills: ISkill[];
+}
+
+/** ПОДКАТЕГОРИЯ НАВЫКОВ */
+export interface ISkillsSubcategory {
+  id: TId;
+  name: string;
+  skillCategoryId: TId; // id родительской категории
+  parent?: { id: TId; name: string } | null;
 }
 
 /** НАВЫК
@@ -47,14 +77,26 @@ export interface ISkillsCategory {
  * 2. Пользователь может выбрать НЕСКОЛЬКО НАВЫКОВ, которым хочет НАУЧИТЬСЯ, ИЗ РАЗНЫХ КАТЕГОРИЙ.
  */
 export interface ISkill {
-  id?: TId;
+  id: TId;
   title: string;
   description: string;
   skillSubcategory: TId;
   images: string[];
-  userId: TId;
+  user?: Partial<IUserProfileOnBackend>;
+  category?: Partial<ISkillsCategory>;
   createdAt: string; // дата создания навыка
   updatedAt: string; // дата обновления навыка
+}
+
+export interface ISkillBackend {
+  id: TId;
+  title: string;
+  description: string;
+  images: string[];
+  user: Partial<IUserProfileOnBackend>;
+  category: ISkillsCategory;
+  categoryId?: TId | null;
+  createdAt: string;
 }
 
 //! ======= API =======
@@ -118,18 +160,19 @@ export type TSkillsResponse = TServerResponse<{
 /** ДАННЫЕ ДЛЯ ЗАПРОСА ДОБАВЛЕНИЯ НАВЫКА */
 export type TSkillData = Omit<
   ISkill,
-  "id" | "userId" | "updatedAt" | "createdAt"
+  "id" | "updatedAt" | "createdAt"
 >;
 
 /** ДАННЫЕ ДЛЯ ЗАПРОСА МОДИФИКАЦИИ НАВЫКА */
 export type TModifySkillData = Partial<
-  Omit<ISkill, "id" | "userId" | "updatedAt" | "createdAt">
+  Omit<ISkill, "id" | "updatedAt" | "createdAt">
 > & { id: TId };
 
 /** ДАННЫЕ ЗАПРОСА НА ОБМЕН НАВЫКАМИ */
 export interface ISkillExchangeData {
-  userSkill: TId; // навык, которому пользователь может научить
-  requiredSkillUserId: TId; // id пользователя с необходимым навыком
+  userSkill: TId; // навык, которому пользователь может научить (offeredSkillId на бэке)
+  requiredSkillUserId: TId; // id пользователя с необходимым навыком (для локального стейта/сравнений)
+  requestedSkillId?: TId; // id навыка, который запрашивают (requestedSkillId на бэке)
   message: string; // сообщение
 }
 
@@ -143,8 +186,9 @@ export type TRequestStatus =
 
 export interface ISkillExchange {
   id: TId;
-  userSkill: TId;
+  userSkill: TId; // offeredSkillId на бэке
   requiredSkillUserId: TId;
+  requestedSkillId?: TId; // requestedSkillId на бэке
   message?: string;
   createdAt: string;
   status?: TRequestStatus;
@@ -155,11 +199,81 @@ export interface ISkillExchange {
 
 export type UploadResponse = {
   url: string;
-  filename: string;
-  size: number; // в байтах
 };
 
 export interface IMyRequests {
   sent: ISkillExchange[];
   received: ISkillExchange[];
+}
+
+/** ОТВЕТ РЕАЛЬНОГО БЭКЕНДА НА POST /auth/register — гораздо более скудный,
+ *  чем IUserProfile: только то, что реально известно сразу после регистрации. */
+export interface IRegisterResponseUser {
+  id: TId;
+  email: string;
+  role: string;
+  name: string | null;
+}
+
+export type TRegisterResponse = { user: IRegisterResponseUser };
+
+/** ДАННЫЕ ДЛЯ PATCH /users/me — все поля опциональны */
+export interface IUpdateProfileData {
+  email?: string;
+  name?: string;
+  birthdate?: string;
+  gender?: "MALE" | "FEMALE" | "UNSPECIFIED";
+  cityId?: TId | null;
+  avatar?: string;
+  about?: string;
+}
+
+/** ОДНА КАТЕГОРИЯ В ОТВЕТЕ PATCH /users/me/want-to-learn */
+export interface IWantToLearnCategory {
+  id: TId;
+  name: string;
+}
+
+/** ЭЛЕМЕНТ ПУБЛИЧНОЙ ЛЕНТЫ НАВЫКОВ (GET /skills) — навык со вложенным автором.
+ *  Отдельный тип от ISkill: та форма — для создания/редактирования своего
+ *  навыка, эта — специально под витрину карточек на главной. */
+export interface IPublicSkillCard {
+  id: TId;
+  title: string;
+  favoritesCount: number;
+  createdAt: string;
+  categoryId: TId | null;
+  user: {
+    id: TId;
+    name: string;
+    avatar: string | null;
+    age: number | null;
+    gender: TGender | null;
+    city: { id: TId; name: string } | null;
+    wantToLearn: { id: TId; name: string }[] | null;
+  };
+}
+
+export interface IPublicSkillsFeedResponse {
+  data: IPublicSkillCard[];
+  page: number;
+  totalPages: number;
+}
+ 
+/** РЕАЛЬНЫЙ ОТВЕТ GET /users/me — форма настоящей сущности User с бэкенда,
+ *  отличается от IUserProfile (city — объект, а не строка; нет
+ *  likesSkillsIds/interestedSkillsSubcategoriesIds — эти relations
+ *  сейчас этим эндпоинтом не подгружаются, см. чат с бэком).
+ *  skills — навыки пользователя (relation owner_id), эндпоинт их отдаёт. */
+export interface IRealUserMeResponse {
+  id: TId;
+  email: string;
+  name: string | null;
+  about: string | null;
+  birthdate: string | null;
+  gender: "MALE" | "FEMALE" | null;
+  avatar: string | null;
+  role: string;
+  city: { id: TId; name: string; region: string } | null;
+  skills?: { id: TId }[];
 }

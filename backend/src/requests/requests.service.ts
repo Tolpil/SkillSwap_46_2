@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Logger,
   NotFoundException,
   ForbiddenException,
   BadRequestException,
@@ -10,67 +11,114 @@ import { Request } from './entities/request.entity';
 import { Skill } from '../skills/entities/skill.entity';
 import { CreateRequestDto } from './dto/create-request.dto';
 import { RequestStatus } from './request-status.enums';
+import { MailService } from '../mail/mail.service';
+import { NotificationsGateway } from '../notifications/notifications.gateway';
 
 @Injectable()
 export class RequestsService {
+  private readonly logger = new Logger(RequestsService.name);
+
   constructor(
     @InjectRepository(Request)
     private requestsRepository: Repository<Request>,
     @InjectRepository(Skill)
     private skillsRepository: Repository<Skill>,
+    private readonly mailService: MailService,
+    private readonly notificationsGateway: NotificationsGateway,
   ) {}
 
   async create(
     createRequestDto: CreateRequestDto,
     senderId: string,
   ): Promise<Request> {
-    return this.requestsRepository.manager.transaction(async (manager) => {
-      const skillRepo = manager.getRepository(Skill);
-      const requestRepo = manager.getRepository(Request);
+    let receiverId: string | undefined;
+    let receiverEmail: string | undefined;
+    let skillTitle: string | undefined;
+    let offeredSkillTitle: string | undefined;
+    let senderName: string | undefined;
 
-      const requestedSkill = await skillRepo.findOne({
-        where: { id: createRequestDto.requestedSkillId },
-        relations: ['user'],
-      });
+    const saved = await this.requestsRepository.manager.transaction(
+      async (manager) => {
+        const skillRepo = manager.getRepository(Skill);
+        const requestRepo = manager.getRepository(Request);
 
-      if (!requestedSkill) {
-        throw new NotFoundException('Навык не найден');
-      }
+        const requestedSkill = await skillRepo.findOne({
+          where: { id: createRequestDto.requestedSkillId },
+          relations: ['user'],
+        });
 
-      const offeredSkill = await skillRepo.findOne({
-        where: { id: createRequestDto.offeredSkillId },
-        relations: ['user'],
-      });
+        if (!requestedSkill) {
+          throw new NotFoundException('Навык не найден');
+        }
 
-      if (!offeredSkill) {
-        throw new NotFoundException('Навык не найден');
-      }
+        const offeredSkill = await skillRepo.findOne({
+          where: { id: createRequestDto.offeredSkillId },
+          relations: ['user'],
+        });
 
-      if (offeredSkill.user?.id !== senderId) {
-        throw new ForbiddenException('Навык не принадлежит отправителю заявки');
-      }
+        if (!offeredSkill) {
+          throw new NotFoundException('Навык не найден');
+        }
 
-      if (
-        createRequestDto.offeredSkillId === createRequestDto.requestedSkillId
-      ) {
-        throw new BadRequestException('Навыки совпадают');
-      }
+        if (offeredSkill.user?.id !== senderId) {
+          throw new ForbiddenException(
+            'Навык не принадлежит отправителю заявки',
+          );
+        }
 
-      const receiverId = requestedSkill.user.id;
+        if (
+          createRequestDto.offeredSkillId === createRequestDto.requestedSkillId
+        ) {
+          throw new BadRequestException('Навыки совпадают');
+        }
 
-      if (senderId === receiverId) {
-        throw new BadRequestException('Нельзя отправить заявку себе');
-      }
+        receiverId = requestedSkill.user.id;
 
-      const request = requestRepo.create({
-        sender: { id: senderId },
-        receiver: { id: receiverId },
-        offeredSkill: { id: createRequestDto.offeredSkillId },
-        requestedSkill: { id: createRequestDto.requestedSkillId },
-      });
+        if (senderId === receiverId) {
+          throw new BadRequestException('Нельзя отправить заявку себе');
+        }
 
-      return requestRepo.save(request);
-    });
+        receiverEmail = requestedSkill.user.email;
+        skillTitle = requestedSkill.title;
+        offeredSkillTitle = offeredSkill.title;
+        senderName =
+          offeredSkill.user.name ?? offeredSkill.user.email ?? 'Пользователь';
+
+        const request = requestRepo.create({
+          sender: { id: senderId },
+          receiver: { id: receiverId },
+          offeredSkill: { id: createRequestDto.offeredSkillId },
+          requestedSkill: { id: createRequestDto.requestedSkillId },
+        });
+
+        return requestRepo.save(request);
+      },
+    );
+
+    if (receiverEmail && skillTitle) {
+      await this.sendEmailNotification(
+        receiverEmail,
+        'Новая заявка на обмен навыками',
+        `Поступила новая заявка на навык «${skillTitle}».`,
+      );
+    }
+
+    if (receiverId && senderName && offeredSkillTitle) {
+      const notificationReceiverId = receiverId;
+      const notificationSenderName = senderName;
+      const notificationSkillTitle = offeredSkillTitle;
+
+      await this.sendSocketNotification(() =>
+        this.notificationsGateway.notifyNewRequest(
+          notificationReceiverId,
+          notificationSenderName,
+          notificationSkillTitle,
+          createRequestDto.offeredSkillId,
+        ),
+      );
+    }
+
+    return saved;
   }
 
   async findIncoming(userId: string): Promise<Request[]> {
@@ -102,7 +150,7 @@ export class RequestsService {
   ): Promise<Request> {
     const request = await this.requestsRepository.findOne({
       where: { id },
-      relations: ['receiver'],
+      relations: ['receiver', 'sender', 'requestedSkill'],
     });
 
     if (!request) {
@@ -120,7 +168,68 @@ export class RequestsService {
     request.status = status;
     request.isRead = true;
 
-    return this.requestsRepository.save(request);
+    const saved = await this.requestsRepository.save(request);
+
+    if (request.sender?.email) {
+      const statusText =
+        status === RequestStatus.ACCEPTED ? 'принята' : 'отклонена';
+
+      await this.sendEmailNotification(
+        request.sender.email,
+        'Статус заявки обновлён',
+        `Ваша заявка на обмен навыками была ${statusText}.`,
+      );
+    }
+
+    const recipientId = request.sender?.id;
+    const fromUser =
+      request.receiver?.name ?? request.receiver?.email ?? 'Пользователь';
+    const skillName = request.requestedSkill?.title;
+    const skillId = request.requestedSkill?.id;
+
+    if (recipientId && skillName && skillId) {
+      await this.sendSocketNotification(() => {
+        if (status === RequestStatus.ACCEPTED) {
+          return this.notificationsGateway.notifyRequestAccepted(
+            recipientId,
+            fromUser,
+            skillName,
+            skillId,
+          );
+        }
+
+        return this.notificationsGateway.notifyRequestRejected(
+          recipientId,
+          fromUser,
+          skillName,
+          skillId,
+        );
+      });
+    }
+
+    return saved;
+  }
+
+  private async sendEmailNotification(
+    email: string,
+    subject: string,
+    text: string,
+  ): Promise<void> {
+    try {
+      await this.mailService.sendUserNotification(email, { subject, text });
+    } catch (error) {
+      this.logger.error(`Failed to send email to ${email}`, error as Error);
+    }
+  }
+
+  private async sendSocketNotification(
+    send: () => Promise<unknown>,
+  ): Promise<void> {
+    try {
+      await send();
+    } catch (error) {
+      this.logger.error('Failed to save or send notification', error as Error);
+    }
   }
 
   async markRead(id: string, userId: string): Promise<Request> {

@@ -4,13 +4,14 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { User } from './entities/user.entity';
 import { FindUsersDto } from './dto/find-users.dto';
 import { City } from '../cities/entities/city.entity';
+import { Category } from '../categories/entities/category.entity';
 
 @Injectable()
 export class UsersService {
@@ -19,12 +20,23 @@ export class UsersService {
     private readonly userRepository: Repository<User>,
     @InjectRepository(City)
     private readonly cityRepository: Repository<City>,
+    @InjectRepository(Category)
+    private readonly categoryRepository: Repository<Category>,
   ) {}
 
   async findAll(dto: FindUsersDto) {
-    const { page, limit } = dto;
+    const { page = 1, limit = 20 } = dto;
 
     const [data, total] = await this.userRepository.findAndCount({
+      select: {
+        id: true,
+        name: true,
+        about: true,
+        birthdate: true,
+        gender: true,
+        avatar: true,
+        role: true,
+      },
       skip: (page - 1) * limit,
       take: limit,
     });
@@ -75,10 +87,6 @@ export class UsersService {
     return { message: 'Пароль успешно изменён' };
   }
 
-  findOne(id: number) {
-    return `This action returns a #${id} user`;
-  }
-
   async update(id: string, dto: UpdateUserDto): Promise<User> {
     const user = await this.userRepository.findOne({
       where: { id },
@@ -111,14 +119,15 @@ export class UsersService {
     return user;
   }
 
-  remove(id: number) {
-    return `This action removes a #${id} user`;
-  }
-
   async findById(id: string): Promise<User | null> {
     return this.userRepository.findOne({
       where: { id },
-      relations: { city: true },
+      relations: {
+        city: true,
+        wantToLearn: true,
+        favoriteSkills: true,
+        skills: true,
+      },
     });
   }
 
@@ -156,5 +165,29 @@ export class UsersService {
 
   async saveFavorites(user: User): Promise<void> {
     await this.userRepository.save(user);
+  }
+
+  async updateWantToLearn(
+    userId: string,
+    categoryIds: string[],
+  ): Promise<Category[]> {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+
+    if (!user) {
+      throw new NotFoundException(`Пользователь с id ${userId} не найден`);
+    }
+
+    const categories = await this.categoryRepository.findBy({
+      id: In(categoryIds),
+    });
+
+    if (categories.length !== categoryIds.length) {
+      throw new BadRequestException('Одна или несколько категорий не найдены');
+    }
+
+    user.wantToLearn = categories;
+    await this.userRepository.save(user);
+
+    return categories;
   }
 }

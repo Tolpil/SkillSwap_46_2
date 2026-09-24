@@ -21,6 +21,7 @@ type DropdownProps = {
   error?: boolean;
   searchable?: boolean;
   searchPlaceholder?: string;
+  onSearchChange?: (value: string) => void;
 };
 
 export const Dropdown = (props: DropdownProps) => {
@@ -36,6 +37,7 @@ export const Dropdown = (props: DropdownProps) => {
     error = false,
     searchable = false,
     searchPlaceholder = "Начните вводить...",
+    onSearchChange,
   } = props;
 
   const [isOpen, setIsOpen] = useState(false);
@@ -43,15 +45,27 @@ export const Dropdown = (props: DropdownProps) => {
   const rootRef = useRef<HTMLDivElement>(null);
   const placeholderRef = useRef<HTMLDivElement>(null);
 
+  const handleSearchChange = (value: string) => {
+    setSearchQuery(value);
+    onSearchChange?.(value);
+  };
+
+  const resetSearch = () => {
+    setSearchQuery("");
+    onSearchChange?.("");
+  };
+
   useOutsideClickClose({
     isOpen,
     rootRef,
-    onClose,
+    onClose: () => {
+      resetSearch();
+      onClose?.();
+    },
     onChange: (value) => {
       setIsOpen(value);
-
       if (!value) {
-        setSearchQuery("");
+        resetSearch();
       }
     },
   });
@@ -80,12 +94,12 @@ export const Dropdown = (props: DropdownProps) => {
     if (disabled) return;
 
     setIsOpen(false);
-    setSearchQuery("");
+    resetSearch();
     onChange?.(option);
     onClose?.();
   };
 
-  const handleTriggerClick: MouseEventHandler<HTMLElement> = (event) => {
+  const handleTriggerClick: MouseEventHandler<Element> = (event) => {
     event.stopPropagation();
 
     if (disabled) return;
@@ -94,7 +108,7 @@ export const Dropdown = (props: DropdownProps) => {
       const next = !prev;
 
       if (!next) {
-        setSearchQuery("");
+        resetSearch();
         onClose?.();
       }
 
@@ -112,7 +126,7 @@ export const Dropdown = (props: DropdownProps) => {
 
     if (event.key === "Escape") {
       setIsOpen(false);
-      setSearchQuery("");
+      resetSearch();
       onClose?.();
     }
   };
@@ -168,7 +182,7 @@ export const Dropdown = (props: DropdownProps) => {
                 className={styles.inlineSearchInput}
                 type="text"
                 value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
+                onChange={(event) => handleSearchChange(event.target.value)}
                 placeholder={searchPlaceholder}
                 autoFocus
               />
@@ -180,10 +194,10 @@ export const Dropdown = (props: DropdownProps) => {
                   event.stopPropagation();
 
                   if (searchQuery) {
-                    setSearchQuery("");
+                    resetSearch();
                   } else {
                     setIsOpen(false);
-                    setSearchQuery("");
+                    resetSearch();
                     onClose?.();
                   }
                 }}

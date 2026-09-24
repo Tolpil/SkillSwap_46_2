@@ -7,8 +7,10 @@ export interface UserInfoProps {
     birthDate: string; // формат "YYYY-MM-DD"
     gender: OptionType | null;
     city: string;
+    cityId?: string | null;
     about: string;
     avatar?: string;
+    wantToLearnSubcategoryId?: string | null;
   };
   onSave?: (data: {
     email: string;
@@ -16,7 +18,9 @@ export interface UserInfoProps {
     birthDate: string;
     gender: OptionType | null;
     city: string;
+    cityId: string | null;
     about: string;
+    wantToLearnSubcategoryId: string | null;
   }) => void;
   errors?: {
     email?: string;

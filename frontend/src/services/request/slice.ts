@@ -78,17 +78,19 @@ export const requestSlice = createSlice({
 
         const updated = action.payload;
 
-        // обновляем в sent
-        state.sent = state.sent.map((r) => (r.id === updated.id ? updated : r));
-
-        // обновляем в received
-        state.received = state.received.map((r) =>
-          r.id === updated.id ? updated : r,
+        // бэк на accept/reject возвращает только id/status/sender/receiver
+        // (без offeredSkill/requestedSkill), поэтому мёржим, а не заменяем
+        // запись целиком — иначе стёрли бы уже известные поля.
+        state.sent = state.sent.map((r) =>
+          r.id === updated.id ? { ...r, ...updated } : r,
         );
 
-        // если это выбранный
+        state.received = state.received.map((r) =>
+          r.id === updated.id ? { ...r, ...updated } : r,
+        );
+
         if (state.selectedRequest?.id === updated.id) {
-          state.selectedRequest = updated;
+          state.selectedRequest = { ...state.selectedRequest, ...updated };
         }
       })
       .addCase(updateRequestStatusAction.rejected, handleRejected)

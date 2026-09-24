@@ -14,6 +14,7 @@ import {
   updateRequestStatus,
   completeRequest,
 } from "../../api/requestApi";
+import type { IRequestStatusUpdate } from "../../api/requestApi";
 
 // CREATE
 export const createRequestAction = createAsyncThunk<
@@ -53,7 +54,7 @@ export const fetchRequestById = createAsyncThunk<ISkillExchange, TId>(
 
 // UPDATE STATUS
 export const updateRequestStatusAction = createAsyncThunk<
-  ISkillExchange,
+  IRequestStatusUpdate,
   { id: TId; status: TRequestStatus }
 >("requests/updateStatus", async ({ id, status }, { rejectWithValue }) => {
   try {

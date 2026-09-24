@@ -7,4 +7,6 @@ export type LoginUIProps = {
   handleSubmit: (e: SyntheticEvent<HTMLFormElement>) => void;
   password: string;
   setPassword: Dispatch<SetStateAction<string>>;
+  onYandexLogin: () => void;
+  isYandexLoginEnabled: boolean | null;
 };

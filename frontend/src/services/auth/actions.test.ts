@@ -11,7 +11,12 @@ import {
 import { tokenService } from "../../utils/tokenService";
 import * as authApi from "../../api/authApi";
 import * as userApi from "../../api/userApi";
-import type { IUserProfile, TLoginUserResponse } from "../../utils/types";
+import type {
+  IUserProfile,
+  IRealUserMeResponse,
+  TLoginUserResponse,
+  TRegisterResponse,
+} from "../../utils/types";
 import type { AuthState } from "./types";
 
 // Мокаем tokenService
@@ -34,14 +39,27 @@ const mockUser: IUserProfile = {
   email: "test@test.com",
   name: "Test User",
   birthDate: "2000-01-01",
-  gender: "male",
+  gender: "MALE",
   city: "Moscow",
   avatar: "avatar.png",
   likesSkillsIds: [],
   userSkill: "",
+  skills: [],
   interestedSkillsSubcategoriesIds: [],
   createdAt: "2024-01-01T00:00:00.000Z",
   updatedAt: "2024-01-01T00:00:00.000Z",
+};
+
+const mockRealUser: IRealUserMeResponse = {
+  id: "user-1",
+  email: "test@test.com",
+  name: "Test User",
+  about: null,
+  birthdate: "2000-01-01",
+  gender: "MALE",
+  avatar: "avatar.png",
+  role: "USER",
+  city: { id: "city-1", name: "Moscow", region: "Moscow" },
 };
 
 const createTestStore = (preloadedAuth?: Partial<AuthState>) =>
@@ -70,17 +88,20 @@ describe("auth thunks", () => {
       email: "test@test.com",
       name: "Test",
       birthDate: "2000-01-01",
-      gender: "male" as const,
+      gender: "MALE" as const,
       city: "Moscow",
       avatar: "avatar.png",
       password: "123456",
     };
 
     it("fulfilled: вызывает registerUser и сохраняет пользователя", async () => {
-      const response: TLoginUserResponse = {
-        status: true,
-        access_token: "token-123",
-        user: mockUser,
+      const response: TRegisterResponse = {
+        user: {
+          id: "user-1",
+          email: "test@test.com",
+          role: "user",
+          name: "Test User",
+        },
       };
       mockedAuthApi.registerUser.mockResolvedValue(response);
 
@@ -88,7 +109,20 @@ describe("auth thunks", () => {
       await store.dispatch(fetchRegister(registerData));
 
       expect(mockedAuthApi.registerUser).toHaveBeenCalledWith(registerData);
-      expect(store.getState().auth.currentUser).toEqual(mockUser);
+      expect(store.getState().auth.currentUser).toEqual({
+        id: "user-1",
+        email: "test@test.com",
+        name: "Test User",
+        birthDate: "",
+        city: "",
+        avatar: "",
+        likesSkillsIds: [],
+        userSkill: "",
+        skills: [],
+        interestedSkillsSubcategoriesIds: [],
+        createdAt: expect.any(String),
+        updatedAt: expect.any(String),
+      });
       expect(store.getState().auth.loading).toBe(false);
     });
 
@@ -162,24 +196,29 @@ describe("auth thunks", () => {
   describe("fetchProfile", () => {
     it("fulfilled: при наличии токена загружает профиль", async () => {
       (tokenService.get as jest.Mock).mockReturnValue("valid-token");
-      mockedAuthApi.getProfile.mockResolvedValue(mockUser);
+      mockedAuthApi.getProfile.mockResolvedValue(mockRealUser);
 
       const store = createTestStore();
       await store.dispatch(fetchProfile());
 
       expect(mockedAuthApi.getProfile).toHaveBeenCalled();
-      expect(store.getState().auth.currentUser).toEqual(mockUser);
-    });
-
-    it('rejected: без токена → rejectWithValue "Токен не найден"', async () => {
-      (tokenService.get as jest.Mock).mockReturnValue(null);
-
-      const store = createTestStore();
-      const result = await store.dispatch(fetchProfile());
-
-      expect(result.meta.requestStatus).toBe("rejected");
-      expect(result.payload).toBe("Токен не найден");
-      expect(mockedAuthApi.getProfile).not.toHaveBeenCalled();
+      expect(store.getState().auth.currentUser).toEqual({
+        id: "user-1",
+        email: "test@test.com",
+        name: "Test User",
+        birthDate: "2000-01-01",
+        gender: "MALE",
+        city: "Moscow",
+        cityId: "city-1",
+        avatar: "avatar.png",
+        aboutMe: "",
+        likesSkillsIds: [],
+        userSkill: "",
+        skills: [],
+        interestedSkillsSubcategoriesIds: [],
+        createdAt: "",
+        updatedAt: "",
+      });
     });
 
     it("rejected: ошибка API", async () => {
@@ -197,24 +236,39 @@ describe("auth thunks", () => {
   describe("fetchUpdateCurrentUser", () => {
     const updatePayload = { name: "New Name" };
 
-    it("fulfilled: обновляет пользователя", async () => {
-      const updatedUser = { ...mockUser, name: "New Name" };
-      (tokenService.get as jest.Mock).mockReturnValue("valid-token");
-      mockedUserApi.updateUser.mockResolvedValue(updatedUser);
+    it("fulfilled: вызывает updateMyProfile и обновляет пользователя", async () => {
+      const updatedRealUser = { ...mockRealUser, name: "New Name" };
+      mockedUserApi.updateMyProfile.mockResolvedValue(
+        updatedRealUser as unknown as IUserProfile,
+      );
 
       const store = createTestStore({ currentUser: mockUser });
       await store.dispatch(fetchUpdateCurrentUser(updatePayload));
 
-      expect(mockedUserApi.updateUser).toHaveBeenCalledWith(
-        "user-1",
+      expect(mockedUserApi.updateMyProfile).toHaveBeenCalledWith(
         updatePayload,
-        "valid-token",
       );
-      expect(store.getState().auth.currentUser).toEqual(updatedUser);
+      expect(store.getState().auth.currentUser).toEqual({
+        id: "user-1",
+        email: "test@test.com",
+        name: "New Name",
+        birthDate: "2000-01-01",
+        gender: "MALE",
+        city: "Moscow",
+        cityId: "city-1",
+        avatar: "avatar.png",
+        aboutMe: "",
+        likesSkillsIds: [],
+        userSkill: "",
+        skills: [],
+        interestedSkillsSubcategoriesIds: [],
+        createdAt: "2024-01-01T00:00:00.000Z",
+        updatedAt: "2024-01-01T00:00:00.000Z",
+      });
     });
 
-    it("rejected: без токена → rejectWithValue", async () => {
-      (tokenService.get as jest.Mock).mockReturnValue(null);
+    it("rejected: ошибка API → rejectWithValue", async () => {
+      mockedUserApi.updateMyProfile.mockRejectedValue("Server error");
 
       const store = createTestStore({ currentUser: mockUser });
       const result = await store.dispatch(
@@ -222,32 +276,31 @@ describe("auth thunks", () => {
       );
 
       expect(result.meta.requestStatus).toBe("rejected");
-      expect(result.payload).toBe("Токен не найден");
     });
 
-    it("rejected: без currentUser.id → rejectWithValue", async () => {
-      (tokenService.get as jest.Mock).mockReturnValue("valid-token");
-      const userWithoutId = { ...mockUser, id: undefined };
-
-      const store = createTestStore({ currentUser: userWithoutId });
-      const result = await store.dispatch(
-        fetchUpdateCurrentUser(updatePayload),
+    it("fulfilled: приводит фронт-формат профиля к бэкенд-формату (#267)", async () => {
+      mockedUserApi.updateMyProfile.mockResolvedValue(
+        mockRealUser as unknown as IUserProfile,
       );
-
-      expect(result.meta.requestStatus).toBe("rejected");
-      expect(result.payload).toBe("Не найден id пользователя");
-    });
-
-    it("rejected: ошибка API", async () => {
-      (tokenService.get as jest.Mock).mockReturnValue("valid-token");
-      mockedUserApi.updateUser.mockRejectedValue("Update failed");
 
       const store = createTestStore({ currentUser: mockUser });
-      const result = await store.dispatch(
-        fetchUpdateCurrentUser(updatePayload),
+      await store.dispatch(
+        fetchUpdateCurrentUser({
+          name: "Иван",
+          birthDate: "1995-11-23",
+          gender: "MALE",
+          aboutMe: "О себе",
+          cityId: "city-1",
+        }),
       );
 
-      expect(result.meta.requestStatus).toBe("rejected");
+      expect(mockedUserApi.updateMyProfile).toHaveBeenCalledWith({
+        name: "Иван",
+        birthdate: "1995-11-23",
+        gender: "MALE",
+        about: "О себе",
+        cityId: "city-1",
+      });
     });
   });
 });

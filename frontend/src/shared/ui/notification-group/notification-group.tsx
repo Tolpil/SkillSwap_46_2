@@ -55,7 +55,7 @@ export const NotificationGroup: React.FC<TNotificationGroupProps> = ({
         <div className={styles.sectionHeader}>
           <h3 className={styles.sectionTitle}>Просмотренные</h3>
 
-          {readNotifications.length > 0 && (
+          {readNotifications.length > 0 && onClearRead && (
             <button
               type="button"
               className={styles.sectionAction}

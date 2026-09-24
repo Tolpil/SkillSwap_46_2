@@ -6,6 +6,7 @@ import { showToast } from "../utils/toast";
 interface RequestConfig extends RequestInit {
   showErrorToast?: boolean;
   showSuccessToast?: boolean;
+  silentStatuses?: number[];
 }
 
 const API_BASE_URL = "/api";
@@ -18,10 +19,19 @@ async function parseErrorResponse(
 ): Promise<ApiError | null> {
   try {
     const data = await response.json();
-    if (data && typeof data === "object" && "code" in data) {
-      return data as ApiError;
+    if (!data || typeof data !== "object") {
+      return null;
     }
-    return null;
+    return {
+      code: typeof data.code === "string" ? data.code : "unknown",
+      statusCode:
+        typeof data.statusCode === "number"
+          ? data.statusCode
+          : response.status,
+      path: typeof data.path === "string" ? data.path : response.url,
+      timestamp: data.timestamp ?? new Date().toISOString(),
+      message: data.message,
+    } as ApiError;
   } catch {
     return null;
   }
@@ -31,7 +41,7 @@ export async function request<T>(
   url: string,
   config: RequestConfig = {},
 ): Promise<T> {
-  const { showErrorToast = true, ...fetchConfig } = config;
+  const { showErrorToast = true, silentStatuses = [], ...fetchConfig } = config;
 
   const isFormData = fetchConfig.body instanceof FormData;
 
@@ -39,6 +49,7 @@ export async function request<T>(
     const { url: interceptedUrl, config: interceptedConfig } =
       await interceptors.applyRequestInterceptors(addBaseUrl(url), {
         ...fetchConfig,
+        credentials: "include",
         headers: {
           ...(!isFormData && { "Content-Type": "application/json" }),
           ...fetchConfig.headers,
@@ -64,8 +75,8 @@ export async function request<T>(
     }
 
     const errorData = await parseErrorResponse(response);
-
-    if (showErrorToast) {
+    const isSilentStatus = silentStatuses.includes(response.status);
+    if (showErrorToast && !isSilentStatus) {
       const { message, errorCode } = handleError(
         errorData || {
           code: "unknown",

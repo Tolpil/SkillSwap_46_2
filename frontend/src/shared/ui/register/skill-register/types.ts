@@ -13,4 +13,5 @@ export type SkillRegisterProps = {
   onBack: () => void;
   onSubmit: () => void;
   errorText: string;
+  isEditing?: boolean;
 };

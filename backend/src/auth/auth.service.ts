@@ -17,7 +17,9 @@ import { Repository, QueryFailedError } from 'typeorm';
 import { User } from '../users/entities/user.entity';
 import { City } from '../cities/entities/city.entity';
 import * as bcrypt from 'bcrypt';
+import { randomBytes } from 'crypto';
 import { Role } from '../shared/enums/role.enum';
+import { OAuthUser } from './oauth/oauth.types';
 
 @Injectable()
 export class AuthService {
@@ -72,7 +74,7 @@ export class AuthService {
     return this.issueTokens(user);
   }
 
-  private async issueTokens(user: User): Promise<AuthResult> {
+  async issueTokens(user: User): Promise<AuthResult> {
     const { accessToken, refreshToken } = this.generateTokens({
       id: user.id,
       email: user.email,
@@ -92,6 +94,32 @@ export class AuthService {
       accessToken,
       refreshToken,
     };
+  }
+
+  async loginWithOAuth(oauthUser: OAuthUser): Promise<AuthResult> {
+    let user = await this.userRepository.findOne({
+      where: { email: oauthUser.email },
+      select: ['id', 'email', 'role', 'refreshToken', 'name'],
+    });
+
+    if (!user) {
+      const randomPassword = randomBytes(32).toString('hex');
+      const hashedPassword = await bcrypt.hash(randomPassword, 10);
+
+      user = this.userRepository.create({
+        email: oauthUser.email,
+        password: hashedPassword,
+        name: oauthUser.name,
+        role: Role.USER,
+      });
+
+      user = await this.userRepository.save(user);
+    } else if (!user.name && oauthUser.name) {
+      user.name = oauthUser.name;
+      user = await this.userRepository.save(user);
+    }
+
+    return this.issueTokens(user);
   }
 
   async register(dto: RegisterDto): Promise<AuthResult> {
@@ -114,7 +142,6 @@ export class AuthService {
         password: hashedPassword,
         city,
         about: dto.about,
-        name: dto.name,
         birthdate,
         role: Role.USER,
       };
@@ -170,6 +197,28 @@ export class AuthService {
       );
       throw new InternalServerErrorException('Ошибка регистрации');
     }
+  }
+
+  async checkUser(loginDto: LoginDto): Promise<{ exists: boolean }> {
+    const user = await this.userRepository.findOne({
+      where: { email: loginDto.email },
+      select: ['id', 'email', 'password'],
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('Пользователь не найден');
+    }
+
+    const isPasswordValid = await bcrypt.compare(
+      loginDto.password,
+      user.password,
+    );
+
+    if (!isPasswordValid) {
+      throw new UnauthorizedException('Неверный email или пароль');
+    }
+
+    return { exists: true };
   }
 
   async deleteRefreshToken(userId: string): Promise<void> {

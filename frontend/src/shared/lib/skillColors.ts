@@ -1,23 +1,22 @@
 import type { TId } from "../../utils/types";
 
-const CATEGORY_COLORS: Record<string, string> = {
-  "Бизнес и карьера": "var(--color-category-business)",
-  "Творчество и искусство": "var(--color-category-creative)",
-  "Иностранные языки": "var(--color-category-languages)",
-  "Образование и развитие": "var(--color-category-education)",
-  "Дом и уют": "var(--color-category-home)",
-  "Здоровье и лайфстайл": "var(--color-category-health)",
-  "Технологии и IT": "var(--color-category-it)",
-};
+// Color is assigned by a category's position in the full categories list
+// (not by name or a hash of its id), so it stays distinct across categories
+// as long as their count doesn't exceed the palette size below.
+const CATEGORY_COLORS = [
+  "var(--color-category-business)",
+  "var(--color-category-creative)",
+  "var(--color-category-languages)",
+  "var(--color-category-education)",
+  "var(--color-category-home)",
+  "var(--color-category-health)",
+  "var(--color-category-it)",
+] as const;
 
-const DEFAULT_LEARN_COLOR = "var(--color-category-health)";
+const DEFAULT_LEARN_COLOR = CATEGORY_COLORS[0];
 
 type WithId = {
   id?: TId;
-};
-
-type WithCategoryName = WithId & {
-  name: string;
 };
 
 type WithSkillCategoryId = WithId & {
@@ -28,9 +27,21 @@ type WithSkillSubcategory = WithId & {
   skillSubcategory?: TId | null;
 };
 
+export const getCategoryColorById = <TCategory extends WithId>(
+  categoryId: TId,
+  categories: ReadonlyArray<TCategory>,
+): string => {
+  const index = categories.findIndex((category) => category.id === categoryId);
+
+  if (index === -1) {
+    return DEFAULT_LEARN_COLOR;
+  }
+
+  return CATEGORY_COLORS[index % CATEGORY_COLORS.length] ?? DEFAULT_LEARN_COLOR;
+};
 export const getCategoryColorBySubcategoryId = <
   TSubCategory extends WithSkillCategoryId,
-  TCategory extends WithCategoryName,
+  TCategory extends WithId,
 >(
   subcategoryId: TId | undefined,
   subCategories: ReadonlyArray<TSubCategory>,
@@ -50,17 +61,17 @@ export const getCategoryColorBySubcategoryId = <
     (item) => item.id === subCategory.skillCategoryId,
   );
 
-  if (!category) {
+  if (!category?.id) {
     return undefined;
   }
 
-  return CATEGORY_COLORS[category.name];
+  return getCategoryColorById(category.id, categories);
 };
 
 export const getTeachColor = <
   TSkill extends WithSkillSubcategory,
   TSubCategory extends WithSkillCategoryId,
-  TCategory extends WithCategoryName,
+  TCategory extends WithId,
 >(
   skillId: TId | undefined,
   skills: ReadonlyArray<TSkill>,
@@ -86,7 +97,7 @@ export const getTeachColor = <
 
 export const getLearnColors = <
   TSubCategory extends WithSkillCategoryId,
-  TCategory extends WithCategoryName,
+  TCategory extends WithId,
 >(
   subcategoryIds: TId[],
   subCategories: ReadonlyArray<TSubCategory>,

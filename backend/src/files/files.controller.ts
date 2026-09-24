@@ -8,14 +8,16 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiTags } from '@nestjs/swagger';
 import { diskStorage } from 'multer';
-import { extname } from 'path';
+import { extname, join } from 'path';
 import { randomUUID } from 'crypto';
 import { existsSync, mkdirSync } from 'fs';
 import { FilesService } from './files.service';
 import { AccessTokenGuard } from '../auth/guards/accessToken.guard';
+import { ApiFilesUpload } from './files.swagger';
 
-const UPLOADS_DIR = './public/uploads';
+const UPLOADS_DIR = join(process.cwd(), 'public', 'uploads');
 const ALLOWED_MIME_TYPES = [
   'image/jpeg',
   'image/png',
@@ -27,6 +29,7 @@ if (!existsSync(UPLOADS_DIR)) {
   mkdirSync(UPLOADS_DIR, { recursive: true });
 }
 
+@ApiTags('files')
 @Controller('files')
 export class FilesController {
   constructor(private readonly filesService: FilesService) {}
@@ -56,11 +59,11 @@ export class FilesController {
       },
     }),
   )
+  @ApiFilesUpload()
   uploadFile(@UploadedFile() file: Express.Multer.File) {
     if (!file) {
       throw new BadRequestException('Файл не был передан');
     }
-
     return this.filesService.buildFileResponse(file);
   }
 }

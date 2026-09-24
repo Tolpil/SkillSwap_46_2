@@ -6,7 +6,6 @@ import { Icon } from "../../shared/ui/icon";
 import { ModalUI } from "../../shared/ui/modal-ui";
 import { CreateOffer } from "../../features/modals/create-offer";
 import { ImageGallery } from "../../features/image-gallery/image-gallery";
-import { drumsImages } from "../../assets/images/skills";
 import styles from "./skill-page.module.css";
 import { SkillCardSlider } from "../../widgets/skillcard-slider";
 import { useDispatch, useSelector } from "../../services/store";
@@ -14,8 +13,7 @@ import {
   selectSelectedUser,
   selectSimilarUsers,
 } from "../../services/user/selectors";
-import { fetchUserById, fetchUsers } from "../../services/user/actions";
-import { fetchSkills } from "../../services/skill/actions";
+import { fetchSkillById, fetchSkills } from "../../services/skill/actions";
 import {
   fetchCategories,
   fetchSubCategories,
@@ -23,15 +21,18 @@ import {
 import { getSkillTitle } from "../../shared/lib/getSkillTitle";
 import { getSubcategoryNames } from "../../shared/lib/getSubcategoryNames";
 import { getLearnColors, getTeachColor } from "../../shared/lib/skillColors";
-import { getAgeFromBirthDate } from "../../utils/age";
+import { formatAgeValue } from "../../utils/age";
 import clsx from "clsx";
 import {
   createRequestAction,
   fetchMyRequests,
   updateRequestStatusAction,
 } from "../../services/request/actions";
-import { fetchUpdateCurrentUser } from "../../services/auth/actions";
 import { showToast } from "../../utils/toast";
+import {formatUser} from "../../api/userApi";
+import type { IPublicSkillCard, IUserProfileOnBackend } from "../../utils/types";
+import { toggleFavoriteSkill } from "../../services/favorites/actions";
+import { selectFavoriteIds } from "../../services/favorites/slice";
 
 const getAgeNumber = (birthDate: string): number => {
   const today = new Date();
@@ -52,23 +53,52 @@ export function SkillPage() {
   const navigate = useNavigate();
   const dispatch = useDispatch();
 
-  const selectedUser = useSelector(selectSelectedUser);
-  const similarUsers = useSelector(selectSimilarUsers);
+  const selectedUserFromStore = useSelector((state) => selectSelectedUser(state, id));
+  const similarUsers = useSelector((state) => selectSimilarUsers(state, id));
   const users = useSelector((state) => state.user.list);
   const skills = useSelector((state) => state.skills.data);
+  const selectedSkill =
+    skills.find((skill) => String(skill.id) === String(id)) ?? null;
+  const rawSkillUser: Partial<IUserProfileOnBackend> & {age?: number} | null = selectedSkill?.user ?? null;
+  const selectedUserFromSkill = rawSkillUser
+    ? {
+        ...formatUser(rawSkillUser as IUserProfileOnBackend),
+        userSkill: selectedSkill?.id ?? "",
+      }
+    : null;
+
+  const selectedUser =
+    selectedUserFromStore ??
+    selectedUserFromSkill ??
+    users.find((user) => String(user.userSkill) === String(id)) ??
+    users.find(
+      (user) =>
+        String(user.id) === String(selectedSkill?.user?.id ?? rawSkillUser?.id),
+    ) ??
+    null;
+
   const subCategories = useSelector((state) => state.category.subCategories);
   const categories = useSelector((state) => state.category.categories);
   const currentUser = useSelector((state) => state.auth.currentUser);
   const requestsReceived = useSelector((state) => state.requests.received);
   const sentRequests = useSelector((state) => state.requests.sent);
+  const favoriteIds = useSelector(selectFavoriteIds);
 
   const [isOfferModalOpen, setIsOfferModalOpen] = useState(false);
   const [isCreatingRequest, setIsCreatingRequest] = useState(false);
-  const [isTogglingFavorite, setIsTogglingFavorite] = useState(false);
+  const [isRespondingToRequest, setIsRespondingToRequest] = useState(false);
 
   useEffect(() => {
-    if (users.length === 0) {
-      dispatch(fetchUsers());
+    if (!id) {
+      return;
+    }
+
+    dispatch(fetchSkillById(id));
+  }, [dispatch, id]);
+
+  useEffect(() => {
+    if (!id) {
+      return;
     }
 
     if (skills.length === 0) {
@@ -83,18 +113,12 @@ export function SkillPage() {
       dispatch(fetchSubCategories());
     }
 
-    if (id && selectedUser?.id !== id) {
-      dispatch(fetchUserById(id));
-    }
-
     if (currentUser) {
       dispatch(fetchMyRequests());
     }
   }, [
     dispatch,
     id,
-    selectedUser?.id,
-    users.length,
     skills.length,
     categories.length,
     subCategories.length,
@@ -116,10 +140,6 @@ export function SkillPage() {
       </section>
     );
   }
-
-  const selectedSkill = skills.find(
-    (skill) => skill.id === selectedUser.userSkill,
-  );
 
   const selectedSubCategory = selectedSkill
     ? subCategories.find(
@@ -158,15 +178,19 @@ export function SkillPage() {
     categories,
   );
 
-  const isFavorite =
-    currentUser?.likesSkillsIds.includes(selectedUser.userSkill) ?? false;
+  const authorAgeLabel = formatAgeValue(
+    selectedUser.birthDate || (rawSkillUser?.age ?? null),
+  );
+
+  const isFavorite = Boolean(
+    selectedSkill && favoriteIds.includes(selectedSkill.id),
+  );
 
   const isOwnProfile = currentUser?.id === selectedUser?.id;
 
-  const galleryImages =
-    selectedSkill?.images && selectedSkill.images.length > 0
-      ? selectedSkill.images
-      : drumsImages;
+  const hasSkill = (currentUser?.skills?.length ?? 0) > 0;
+
+  const galleryImages = selectedSkill?.images ?? [];
 
   // Проверяем, отправлено ли предложение
   const isOfferSent =
@@ -188,8 +212,8 @@ export function SkillPage() {
 
   const preparedSimilarUsers = similarUsers
     .map((user) => {
-      const age = getAgeNumber(user.birthDate);
-      const canTeach = getSkillTitle(user.userSkill, skills);
+      const age = user.birthDate ? getAgeNumber(user.birthDate) : (user.age ?? NaN);
+      const canTeach = user.userSkill ? getSkillTitle(user.userSkill, skills) : "";
       const wantsToLearn = getSubcategoryNames(
         user.interestedSkillsSubcategoriesIds,
         subCategories,
@@ -213,34 +237,13 @@ export function SkillPage() {
       );
     });
 
-  const handleFavoriteClick = async (skillId: string | null | undefined) => {
-    if (!currentUser || !skillId || isTogglingFavorite) {
+  const handleFavoriteClick = (skill: IPublicSkillCard | null | undefined) => {
+    if (!currentUser || !skill) {
       return;
     }
 
-    setIsTogglingFavorite(true);
-
-    const isLiked = currentUser.likesSkillsIds.includes(skillId);
-
-    const nextLikesSkillsIds = isLiked
-      ? currentUser.likesSkillsIds.filter((id) => id !== skillId)
-      : [...currentUser.likesSkillsIds, skillId];
-
-    try {
-      await dispatch(
-        fetchUpdateCurrentUser({ likesSkillsIds: nextLikesSkillsIds }),
-      ).unwrap();
-      dispatch(fetchUsers());
-      showToast(
-        isLiked ? "Удалено из избранного" : "Добавлено в избранное",
-        "success",
-      );
-    } catch (error) {
-      console.error("Не удалось обновить избранное", error);
-      showToast("Не удалось обновить избранное", "error");
-    } finally {
-      setIsTogglingFavorite(false);
-    }
+    const isCurrentlyFavorite = favoriteIds.includes(skill.id);
+    dispatch(toggleFavoriteSkill({ skill, isCurrentlyFavorite }));
   };
 
   const handleCopyLink = async () => {
@@ -261,6 +264,28 @@ export function SkillPage() {
     setIsOfferModalOpen(true);
   };
 
+  const handleRespondToRequest = async (
+    requestId: string,
+    status: "accepted" | "rejected",
+  ) => {
+    if (isRespondingToRequest) {
+      return;
+    }
+
+    setIsRespondingToRequest(true);
+
+    try {
+      await dispatch(
+        updateRequestStatusAction({ id: requestId, status }),
+      ).unwrap();
+    } catch (error) {
+      console.error("Не удалось обновить статус запроса", error);
+      showToast("Не удалось обновить статус запроса", "error");
+    } finally {
+      setIsRespondingToRequest(false);
+    }
+  };
+
   const handleOfferModalAction = async () => {
     setIsOfferModalOpen(false);
 
@@ -269,7 +294,8 @@ export function SkillPage() {
       return;
     }
 
-    if (!selectedUser?.id || !currentUser.userSkill) {
+    if (!selectedUser?.id || !hasSkill) {
+      navigate("/skill/create", { state:  { from: `/skill/${id}` } })
       return;
     }
 
@@ -278,8 +304,9 @@ export function SkillPage() {
     try {
       await dispatch(
         createRequestAction({
-          userSkill: currentUser.userSkill,
+          userSkill: currentUser.skills![0],
           requiredSkillUserId: selectedUser.id,
+          requestedSkillId: selectedSkill?.id ?? id,
           message: `Хочу предложить обмен по навыку "${selectedSkill?.title ?? "Навык"}"`,
         }),
       ).unwrap();
@@ -310,7 +337,7 @@ export function SkillPage() {
               <h2 className={styles.authorName}>{selectedUser.name}</h2>
               <p className={styles.authorMeta}>
                 {selectedUser.city},{" "}
-                {getAgeFromBirthDate(selectedUser.birthDate)}
+                {authorAgeLabel}
               </p>
             </div>
           </div>
@@ -358,8 +385,7 @@ export function SkillPage() {
               type="button"
               className={styles.actionButton}
               aria-label="Добавить в избранное"
-              onClick={() => handleFavoriteClick(selectedUser.userSkill)}
-              disabled={isTogglingFavorite}
+              onClick={() => handleFavoriteClick(selectedSkill)}
             >
               <Icon
                 name={isFavorite ? "like-filled" : "like"}
@@ -428,31 +454,29 @@ export function SkillPage() {
                         <div className={styles.requestActions}>
                           <Button
                             variant="secondary"
-                            onClick={() => {
-                              dispatch(
-                                updateRequestStatusAction({
-                                  id: incomingRequest.id,
-                                  status: "rejected",
-                                }),
-                              );
-                            }}
+                            onClick={() =>
+                              handleRespondToRequest(
+                                incomingRequest.id,
+                                "rejected",
+                              )
+                            }
                             className={styles.rejectButton}
                             fullWidth
+                            disabled={isRespondingToRequest}
                           >
                             Отклонить
                           </Button>
                           <Button
                             variant="primary"
-                            onClick={() => {
-                              dispatch(
-                                updateRequestStatusAction({
-                                  id: incomingRequest.id,
-                                  status: "accepted",
-                                }),
-                              );
-                            }}
+                            onClick={() =>
+                              handleRespondToRequest(
+                                incomingRequest.id,
+                                "accepted",
+                              )
+                            }
                             className={styles.acceptButton}
                             fullWidth
+                            disabled={isRespondingToRequest}
                           >
                             Принять обмен
                           </Button>
@@ -501,30 +525,39 @@ export function SkillPage() {
 
         {preparedSimilarUsers.length > 0 ? (
           <SkillCardSlider
-            cards={preparedSimilarUsers.map((user) => ({
-              id: user.id,
-              avatar: user.avatar,
-              name: user.name,
-              city: user.city,
-              age: user.age,
-              canTeach: user.canTeach,
-              wantsToLearn: user.wantsToLearn,
-              isFavorite:
-                currentUser?.likesSkillsIds.includes(user.userSkill) ?? false,
-              onFavoriteClick: () => handleFavoriteClick(user.userSkill),
-              teachColor: getTeachColor(
-                user.userSkill,
-                skills,
-                subCategories,
-                categories,
-              ),
-              wantsToLearnColors: getLearnColors(
-                user.interestedSkillsSubcategoriesIds,
-                subCategories,
-                categories,
-              ),
-              disableDetails: String(user.id) === String(currentUser?.id),
-            }))}
+            cards={preparedSimilarUsers.map((user) => {
+              const userSkill = user.userSkill
+                ? (skills.find(
+                    (skill) => String(skill.id) === String(user.userSkill),
+                  ) ?? null)
+                : null;
+
+              return {
+                id: user.userSkill,
+                avatar: user.avatar,
+                name: user.name,
+                city: user.city,
+                age: user.age,
+                canTeach: user.canTeach,
+                wantsToLearn: user.wantsToLearn,
+                isFavorite: Boolean(
+                  userSkill && favoriteIds.includes(userSkill.id),
+                ),
+                onFavoriteClick: () => handleFavoriteClick(userSkill),
+                teachColor: getTeachColor(
+                  user.userSkill,
+                  skills,
+                  subCategories,
+                  categories,
+                ),
+                wantsToLearnColors: getLearnColors(
+                  user.interestedSkillsSubcategoriesIds,
+                  subCategories,
+                  categories,
+                ),
+                disableDetails: String(user.id) === String(currentUser?.id),
+              };
+            })}
           />
         ) : (
           <div className={styles.emptySimilar}>
@@ -538,7 +571,13 @@ export function SkillPage() {
         onClose={() => setIsOfferModalOpen(false)}
       >
         <CreateOffer
-          variant={currentUser ? "created" : "registration"}
+          variant={
+            !currentUser
+              ? "registration"
+              : hasSkill
+                ? "created"
+                : "noSkill"
+          }
           onActionClick={handleOfferModalAction}
         />
       </ModalUI>

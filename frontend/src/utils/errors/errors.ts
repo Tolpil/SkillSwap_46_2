@@ -48,4 +48,35 @@ const generateErrorCodes = (): Record<string, string> => {
   return errorCodes;
 };
 
+const DEFAULT_BACKEND_MESSAGES = new Set([
+  "Unauthorized",
+  "Forbidden resource",
+  "Forbidden",
+  "Not Found",
+  "Bad Request",
+  "Internal Server Error",
+  "Payload Too Large",
+  "Unsupported Media Type",
+  "Too Many Requests",
+]);
+
+export const isDefaultBackendMessage = (message: string): boolean =>
+  DEFAULT_BACKEND_MESSAGES.has(message.trim());
+
+export const StatusMessages: Record<number, string> = {
+  400: "Некорректный запрос",
+  401: "Требуется авторизация",
+  403: "Недостаточно прав",
+  404: "Не найдено",
+  409: "Конфликт данных",
+  413: "Файл слишком большой",
+  415: "Неподдерживаемый формат файла",
+  422: "Некорректные данные",
+  429: "Слишком много запросов. Попробуйте позже",
+  500: "Ошибка сервера. Попробуйте позже",
+  502: "Сервер недоступен",
+  503: "Сервис временно недоступен",
+  504: "Сервер не отвечает",
+};
+
 export const ErrorCodes = generateErrorCodes();

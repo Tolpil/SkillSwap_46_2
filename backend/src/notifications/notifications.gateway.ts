@@ -7,17 +7,27 @@ import {
 import { Server } from 'socket.io';
 import { WsJwtGuard } from '../auth/guards/ws-jwt.guard';
 import { SocketWithUser } from '../auth/auth.types';
+import { Notification } from './entities/notification.entity';
+import { NotificationsService } from './notifications.service';
 import { NotificationPayload, NotificationType } from './notifications.types';
 
 @UseGuards(WsJwtGuard)
-@WebSocketGateway({ cors: { origin: '*' } })
+@WebSocketGateway({
+  cors: {
+    origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+    credentials: true,
+  },
+})
 export class NotificationsGateway implements OnGatewayConnection {
   private readonly logger = new Logger(NotificationsGateway.name);
 
   @WebSocketServer()
   server: Server;
 
-  constructor(private readonly wsJwtGuard: WsJwtGuard) {}
+  constructor(
+    private readonly wsJwtGuard: WsJwtGuard,
+    private readonly notificationsService: NotificationsService,
+  ) {}
 
   // Гарды не выполняются на lifecycle-хуках, поэтому токен проверяем вручную
   handleConnection(client: SocketWithUser) {
@@ -32,14 +42,30 @@ export class NotificationsGateway implements OnGatewayConnection {
     }
   }
 
-  notifyUser(userId: string, payload: NotificationPayload) {
-    this.server.to(userId).emit('notificateNewRequest', payload);
+  async notifyUser(
+    userId: string,
+    payload: NotificationPayload,
+  ): Promise<Notification> {
+    const notification = await this.notificationsService.create(
+      userId,
+      payload,
+    );
+
+    this.server.to(userId).emit('notificateNewRequest', notification);
+
+    return notification;
   }
 
-  notifyNewRequest(ownerId: string, fromUser: string, skillName: string) {
-    this.notifyUser(ownerId, {
+  notifyNewRequest(
+    ownerId: string,
+    fromUser: string,
+    skillName: string,
+    skillId: string,
+  ) {
+    return this.notifyUser(ownerId, {
       type: NotificationType.NEW_REQUEST,
       skillName,
+      skillId,
       fromUser,
     });
   }
@@ -48,10 +74,12 @@ export class NotificationsGateway implements OnGatewayConnection {
     applicantId: string,
     fromUser: string,
     skillName: string,
+    skillId: string,
   ) {
-    this.notifyUser(applicantId, {
+    return this.notifyUser(applicantId, {
       type: NotificationType.REQUEST_ACCEPTED,
       skillName,
+      skillId,
       fromUser,
     });
   }
@@ -60,10 +88,12 @@ export class NotificationsGateway implements OnGatewayConnection {
     applicantId: string,
     fromUser: string,
     skillName: string,
+    skillId: string,
   ) {
-    this.notifyUser(applicantId, {
+    return this.notifyUser(applicantId, {
       type: NotificationType.REQUEST_REJECTED,
       skillName,
+      skillId,
       fromUser,
     });
   }

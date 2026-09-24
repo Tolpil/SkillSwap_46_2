@@ -1,49 +1,51 @@
 import { USE_MOCKS } from "../config/apiConfig";
 import { tokenService } from "../utils/tokenService.ts";
 import type {
-  IRegisterUserData,
+  IRealUserMeResponse,
   IUserProfile,
   TLoginUserData,
   TLoginUserResponse,
+  TRegisterResponse,
 } from "../utils/types";
 import { api, request } from "./client";
 
 const MOCK_TOKEN = "mock_jwt_token";
 
-// POST /auth/register
-export const registerUser = async (
-  data: IRegisterUserData,
-): Promise<TLoginUserResponse> => {
+export type TYandexOAuthStatus = {
+  enabled: boolean;
+};
+
+export const getYandexOAuthStatus = async (): Promise<TYandexOAuthStatus> => {
   if (USE_MOCKS) {
-    const mockUser: IUserProfile = {
-      id: "mock-user-1",
-      email: data.email,
-      name: data.name,
-      birthDate: data.birthDate,
-      gender: data.gender,
-      city: data.city,
-      avatar: data.avatar,
-      likesSkillsIds: [],
-      userSkill: "",
-      interestedSkillsSubcategoriesIds: [],
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
+    return { enabled: true };
+  }
+
+  return request<TYandexOAuthStatus>("/auth/yandex/status");
+};
+
+// POST /auth/register — сейчас отправляем ТОЛЬКО email и password.
+// Остальные поля профиля уходят отдельными запросами на шаге 2
+// (PATCH /users/me и PATCH /users/me/want-to-learn).
+export const registerUser = async (
+  data: TLoginUserData,
+): Promise<TRegisterResponse> => {
+  if (USE_MOCKS) {
     tokenService.set(MOCK_TOKEN);
     return {
-      status: true,
-      access_token: MOCK_TOKEN,
-      user: mockUser,
+      user: {
+        id: "mock-user-1",
+        email: data.email,
+        role: "USER",
+        name: null,
+      },
     };
   }
 
-  const resp = await request<TLoginUserResponse>("/auth/register", {
+  return request<TRegisterResponse>("/auth/register", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
   });
-  tokenService.set(resp.access_token);
-  return resp;
 };
 
 // POST /auth/login
@@ -69,7 +71,6 @@ export const loginUser = async (
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
   });
-  tokenService.set(resp.access_token);
   return resp;
 };
 
@@ -84,28 +85,21 @@ export const checkUser = async (data: TLoginUserData): Promise<void> => {
 };
 
 // GET /auth/profile
-export const getProfile = async (): Promise<IUserProfile> => {
-  const token = tokenService.get();
-
+// GET /users/me
+export const getProfile = async (): Promise<IRealUserMeResponse> => {
   if (USE_MOCKS) {
     const response = await fetch("/users.json").then((res) => res.json());
     return response.data[0]; // в моках возвращаем первого юзера
   }
-
-  const response = await request<{ data: IUserProfile }>("/auth/profile", {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
+  return request<IRealUserMeResponse>("/users/me", {
+    silentStatuses: [401],
   });
-  return response.data;
 };
 
 // PATCH /auth/password
 export const changePassword = async (
   newPassword: string,
 ): Promise<{ newPassword: string }> => {
-  const token = tokenService.get();
-
   if (USE_MOCKS) {
     return { newPassword };
   }
@@ -116,10 +110,16 @@ export const changePassword = async (
     {
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
       },
     },
   );
 
   return resp;
+};
+
+// POST /auth/logout — стирает httpOnly-куку на стороне бэкенда.
+// Локально (JS) куку стереть невозможно и не нужно пытаться.
+export const logoutUser = async (): Promise<void> => {
+  if (USE_MOCKS) return;
+  await request<void>("/auth/logout", { method: "POST" });
 };

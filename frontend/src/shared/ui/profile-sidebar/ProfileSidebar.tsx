@@ -21,7 +21,7 @@ export const profileSidebarItems: TSidebarItemProps[] = [
   },
   {
     key: "mySkills",
-    text: "Мои навыки",
+    text: "Мой навык",
     icon: "idea",
   },
   {

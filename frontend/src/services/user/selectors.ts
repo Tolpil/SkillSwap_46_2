@@ -10,10 +10,24 @@ import {
   findMatchingIdsByDescription,
   type ISearchable,
 } from "../../utils/search.ts";
-import type { ISkill, TId } from "../../utils/types.ts";
+import type { ISkill, IUserProfileOnBackend, TId } from "../../utils/types.ts";
+import { formatUser } from "../../api/userApi.ts";
 
 export const selectUsers = (state: RootState) => state.user.list;
-export const selectSelectedUser = (state: RootState) => state.user.selectedUser;
+export const selectSelectedUser = (
+  state: RootState,
+  skillId?: string | null,
+) => {
+  if (!skillId) {
+    return state.user.selectedUser;
+  }
+
+  const userBySkill = state.user.list.find(
+    (user) => String(user.userSkill) === String(skillId),
+  );
+
+  return userBySkill ?? state.user.selectedUser;
+};
 export const selectUserLoading = (state: RootState) => state.user.loading;
 export const selectUserError = (state: RootState) => state.user.error;
 
@@ -26,7 +40,9 @@ export const selectPopularUsers = createSelector(selectUsers, (users) => {
     }, {});
   return [...users]
     .sort(
-      (a, b) => (likesCount[b.userSkill] ?? 0) - (likesCount[a.userSkill] ?? 0),
+      (a, b) =>
+        (likesCount[b.userSkill ?? ""] ?? 0) -
+        (likesCount[a.userSkill ?? ""] ?? 0),
     )
     .slice(0, 9);
 });
@@ -39,7 +55,10 @@ export const selectNewestUsers = createSelector(selectUsers, (users) => {
     now.getDate(),
   );
 
-  return users.filter((user) => new Date(user.createdAt) >= oneMonthAgo); // Только за последний месяц
+  return users.filter(
+    (user) =>
+      !!user.createdAt && new Date(user.createdAt).getTime() >= oneMonthAgo.getTime(),
+  ); // Только за последний месяц
 });
 
 export const selectRecommendedUsers = createSelector(
@@ -112,7 +131,7 @@ const createFilteredUsersSelector = (
           (matchingIds === null ||
             !user.userSkill ||
             matchingIds.includes(user.userSkill)) &&
-          !excludeIds.includes(user.userSkill),
+          !excludeIds.includes(user.userSkill ?? ""),
       );
     },
   );
@@ -127,21 +146,34 @@ export const selectFilteredBySkillDescription = createFilteredUsersSelector(
 );
 
 export const selectSimilarUsers = createSelector(
-  selectUsers,
-  selectSelectedUser,
-  (state: RootState) => state.skills.data,
-  (users, selectUsers, skills) => {
-    if (!selectUsers) return [];
+  [
+    (state: RootState) => state.skills.data,
+    (_state: RootState, skillId?: string | null) => skillId,
+  ],
+  (skills, skillId) => {
+    if (!skillId) return [];
 
-    // ищем подкатегорию навыка выбранного пользователя1
-    const userSkill = skills.find((s) => s.id === selectUsers.userSkill);
-    if (!userSkill) return [];
+    const selectedSkill = skills.find((s) => String(s.id) === String(skillId));
+    if (!selectedSkill?.user?.id) return [];
 
-    // ищем пользователей с навыком в той же подкатегории исключая выбранного пользователя
-    return users.filter((user) => {
-      if (user.id === selectUsers.id) return false;
-      const skill = skills.find((s) => s.id === user.userSkill);
-      return skill?.skillSubcategory === userSkill.skillSubcategory;
-    });
+    return skills
+      .filter(
+        (skill) =>
+          !!skill.user?.id &&
+          skill.skillSubcategory === selectedSkill.skillSubcategory &&
+          String(skill.id) !== String(selectedSkill.id) &&
+          String(skill.user.id) !== String(selectedSkill.user!.id),
+      )
+      .map((skill) => {
+        const rawUser = skill.user as Partial<IUserProfileOnBackend> & {
+          age?: number;
+        };
+
+        return {
+          ...formatUser(rawUser as IUserProfileOnBackend),
+          userSkill: skill.id,
+          age: rawUser.age ?? null,
+        };
+      });
   },
 );

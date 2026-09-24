@@ -3,8 +3,6 @@ import {
   Get,
   Body,
   Patch,
-  Param,
-  Delete,
   Req,
   UseGuards,
   Query,
@@ -20,11 +18,13 @@ import { ApiTags } from '@nestjs/swagger';
 import {
   ApiUsersChangePassword,
   ApiUsersFindAll,
-  ApiUsersFindOne,
   ApiUsersGetMe,
-  ApiUsersRemove,
   ApiUsersUpdateMe,
 } from './users.swagger';
+import { UpdateWantToLearnDto } from './dto/update-want-to-learn.dto';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Role } from '../shared/enums/role.enum';
+import { Roles } from '../auth/decorators/roles.decorator';
 
 @ApiTags('users')
 @Controller('users')
@@ -32,6 +32,8 @@ export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
   @Get()
+  @UseGuards(AccessTokenGuard, RolesGuard)
+  @Roles([Role.ADMIN])
   @ApiUsersFindAll()
   findAll(@Query() dto: FindUsersDto) {
     return this.usersService.findAll(dto);
@@ -61,15 +63,10 @@ export class UsersController {
     return this.usersService.changePassword(user.sub, dto);
   }
 
-  @Get(':id')
-  @ApiUsersFindOne()
-  findOne(@Param('id') id: string) {
-    return this.usersService.findOne(+id);
-  }
-
-  @Delete(':id')
-  @ApiUsersRemove()
-  remove(@Param('id') id: string) {
-    return this.usersService.remove(+id);
+  @Patch('me/want-to-learn')
+  @UseGuards(AccessTokenGuard)
+  updateWantToLearn(@Req() req: Request, @Body() dto: UpdateWantToLearnDto) {
+    const user = req.user as JwtPayload;
+    return this.usersService.updateWantToLearn(user.sub, dto.categoryIds);
   }
 }

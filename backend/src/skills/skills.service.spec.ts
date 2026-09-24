@@ -22,21 +22,47 @@ describe('SkillsService', () => {
       | 'createQueryBuilder'
       | 'preload'
       | 'delete'
+      | 'manager'
     >
   >;
 
   let categoriesRepository: jest.Mocked<Pick<Repository<Category>, 'findOne'>>;
+
+  let usersRepository: jest.Mocked<
+    Pick<Repository<User>, 'createQueryBuilder'>
+  >;
 
   let usersService: jest.Mocked<
     Pick<UsersService, 'findByIdWithFavorites' | 'saveFavorites'>
   >;
 
   let queryBuilder: {
+    select: jest.Mock;
+    leftJoin: jest.Mock;
+    addSelect: jest.Mock;
+    leftJoinAndSelect: jest.Mock;
     where: jest.Mock;
     orderBy: jest.Mock;
     skip: jest.Mock;
     take: jest.Mock;
     getManyAndCount: jest.Mock;
+  };
+
+  let usersQueryBuilder: {
+    innerJoin: jest.Mock;
+    where: jest.Mock;
+    distinct: jest.Mock;
+    take: jest.Mock;
+    getMany: jest.Mock;
+  };
+
+  let favoritesCountsQueryBuilder: {
+    select: jest.Mock;
+    addSelect: jest.Mock;
+    from: jest.Mock;
+    where: jest.Mock;
+    groupBy: jest.Mock;
+    getRawMany: jest.Mock;
   };
 
   const ownerId = 'owner-1';
@@ -57,15 +83,41 @@ describe('SkillsService', () => {
     user: { id: ownerId } as User,
     category,
     createdAt: new Date('2026-08-22T00:00:00.000Z'),
+    favoritedByUsers: [],
+  } as Skill;
+
+  const skillWithUser = {
+    ...skill,
+    user: {
+      id: ownerId,
+      name: 'Иван',
+      avatar: 'avatar.jpg',
+      birthdate: new Date('2000-01-01'),
+      city: { id: 'city-1', name: 'Москва' },
+      wantToLearn: [{ id: 'cat-1', name: 'Гитара' }],
+    },
   } as Skill;
 
   beforeEach(() => {
     queryBuilder = {
+      select: jest.fn().mockReturnThis(),
+      leftJoin: jest.fn().mockReturnThis(),
+      addSelect: jest.fn().mockReturnThis(),
+      leftJoinAndSelect: jest.fn().mockReturnThis(),
       where: jest.fn().mockReturnThis(),
       orderBy: jest.fn().mockReturnThis(),
       skip: jest.fn().mockReturnThis(),
       take: jest.fn().mockReturnThis(),
       getManyAndCount: jest.fn(),
+    };
+
+    favoritesCountsQueryBuilder = {
+      select: jest.fn().mockReturnThis(),
+      addSelect: jest.fn().mockReturnThis(),
+      from: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      groupBy: jest.fn().mockReturnThis(),
+      getRawMany: jest.fn().mockResolvedValue([]),
     };
 
     skillsRepository = {
@@ -77,10 +129,31 @@ describe('SkillsService', () => {
         .mockReturnValue(queryBuilder as unknown as SelectQueryBuilder<Skill>),
       preload: jest.fn(),
       delete: jest.fn(),
+      manager: {
+        createQueryBuilder: jest
+          .fn()
+          .mockReturnValue(favoritesCountsQueryBuilder),
+      } as unknown as Repository<Skill>['manager'],
     };
 
     categoriesRepository = {
       findOne: jest.fn(),
+    };
+
+    usersQueryBuilder = {
+      innerJoin: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      distinct: jest.fn().mockReturnThis(),
+      take: jest.fn().mockReturnThis(),
+      getMany: jest.fn(),
+    };
+
+    usersRepository = {
+      createQueryBuilder: jest
+        .fn()
+        .mockReturnValue(
+          usersQueryBuilder as unknown as SelectQueryBuilder<User>,
+        ),
     };
 
     usersService = {
@@ -91,6 +164,7 @@ describe('SkillsService', () => {
     service = new SkillsService(
       skillsRepository as unknown as Repository<Skill>,
       categoriesRepository as unknown as Repository<Category>,
+      usersRepository as unknown as Repository<User>,
       usersService as unknown as UsersService,
     );
   });
@@ -146,27 +220,30 @@ describe('SkillsService', () => {
 
   describe('findAll', () => {
     it('returns paginated skills and configures search query', async () => {
-      const skills = [skill];
-      queryBuilder.getManyAndCount.mockResolvedValue([skills, 25]);
+      queryBuilder.getManyAndCount.mockResolvedValue([[skillWithUser], 25]);
 
-      await expect(
-        service.findAll({
-          page: 2,
-          limit: 10,
-          search: 'nest',
-        }),
-      ).resolves.toEqual({
-        data: skills,
+      const result = await service.findAll({
         page: 2,
-        totalPages: 3,
+        limit: 10,
+        search: 'nest',
+      });
+
+      expect(result.page).toBe(2);
+      expect(result.totalPages).toBe(3);
+      expect(result.data[0]).toMatchObject({
+        id: skillWithUser.id,
+        title: skillWithUser.title,
+        user: {
+          id: ownerId,
+          name: 'Иван',
+          city: { id: 'city-1', name: 'Москва' },
+        },
       });
 
       expect(skillsRepository.createQueryBuilder).toHaveBeenCalledWith('skill');
       expect(queryBuilder.where).toHaveBeenCalledWith(
         'LOWER(skill.title) LIKE LOWER(:search)',
-        {
-          search: '%nest%',
-        },
+        { search: '%nest%' },
       );
       expect(queryBuilder.orderBy).toHaveBeenCalledWith(
         'skill.createdAt',
@@ -180,15 +257,47 @@ describe('SkillsService', () => {
       queryBuilder.getManyAndCount.mockResolvedValue([[], 25]);
 
       await expect(
-        service.findAll({
-          page: 4,
-          limit: 10,
-          search: '',
-        }),
+        service.findAll({ page: 4, limit: 10, search: '' }),
       ).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 
+  describe('findSimilarUsers', () => {
+    it('returns at most 10 unique users with skills from the same category', async () => {
+      const users = [{ id: 'user-1' }, { id: 'user-2' }] as User[];
+      skillsRepository.findOne.mockResolvedValue(skill);
+      usersQueryBuilder.getMany.mockResolvedValue(users);
+
+      await expect(service.findSimilarUsers(skillId)).resolves.toBe(users);
+
+      expect(skillsRepository.findOne).toHaveBeenCalledWith({
+        where: { id: skillId },
+        relations: { category: true },
+      });
+      expect(usersRepository.createQueryBuilder).toHaveBeenCalledWith('user');
+      expect(usersQueryBuilder.innerJoin).toHaveBeenCalledWith(
+        Skill,
+        'skill',
+        'skill.owner_id = user.id',
+      );
+      expect(usersQueryBuilder.where).toHaveBeenCalledWith(
+        'skill.category_id = :categoryId',
+        { categoryId },
+      );
+      expect(usersQueryBuilder.distinct).toHaveBeenCalledWith(true);
+      expect(usersQueryBuilder.take).toHaveBeenCalledWith(10);
+    });
+
+    it('throws when the requested skill does not exist', async () => {
+      skillsRepository.findOne.mockResolvedValue(null);
+
+      await expect(service.findSimilarUsers(skillId)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+
+      expect(usersRepository.createQueryBuilder).not.toHaveBeenCalled();
+    });
+  });
   describe('update', () => {
     it('throws when skill does not exist', async () => {
       skillsRepository.findOne.mockResolvedValue(null);
@@ -424,6 +533,7 @@ describe('SkillsService', () => {
         user: { id: ownerId } as User,
         category,
         createdAt: new Date('2026-08-22T00:00:00.000Z'),
+        favoritedByUsers: [],
       } as Skill;
 
       const user = {

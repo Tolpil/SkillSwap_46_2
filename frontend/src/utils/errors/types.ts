@@ -3,6 +3,7 @@ export type Error = {
   path: string;
   statusCode: number;
   timestamp: Date;
+  message?: string | string[];
 };
 
 export interface ErrorResponse {

@@ -1,57 +1,33 @@
 import { useState, type FC } from "react";
-import { fetchUpdateCurrentUser } from "../../services/auth/actions";
+import userInfo from "../../assets/images/user-info.svg";
+import { toggleFavoriteSkill } from "../../services/favorites/actions";
+import { selectFavoriteIds } from "../../services/favorites/slice";
+import { resolveAssetUrl } from "../../shared/lib/resolveAssetUrl";
 import { useDispatch, useSelector } from "../../services/store";
-import { getSkillTitle } from "../../shared/lib/getSkillTitle";
-import { getSubcategoryNames } from "../../shared/lib/getSubcategoryNames";
-import { getLearnColors, getTeachColor } from "../../shared/lib/skillColors";
-import type { IUserProfile, TId } from "../../utils/types";
+import {
+  getCategoryColorBySubcategoryId,
+  getLearnColors,
+} from "../../shared/lib/skillColors";
+import type { IPublicSkillCard } from "../../utils/types";
 import type { SkillCardProps } from "../skillcard";
 import { SkillCardGroup } from "../skillcard-group";
 import { SkillCardGroupHeader } from "../skillcard-group-header";
 import { SkillCardSlider } from "../skillcard-slider";
 import styles from "./user-section.module.css";
-
+ 
 interface UserSectionProps {
   title: string;
-  users: IUserProfile[];
+  items: IPublicSkillCard[];
   actionText?: string;
   onActionClick?: () => void;
   emptyMessage?: string;
   viewMode?: "grid" | "slider";
   isSorted?: boolean;
 }
-
-type ValidTId = Exclude<TId, null | undefined>;
-
-type PreparedUser = IUserProfile & {
-  age: number;
-  canTeach: string;
-  wantsToLearn: string[];
-  userSkill: ValidTId;
-  skillCreatedAt: string;
-};
-
-function getAgeFromBirthDate(birthDate: string): number | null {
-  const birth = new Date(birthDate);
-
-  if (Number.isNaN(birth.getTime())) {
-    return null;
-  }
-
-  const today = new Date();
-  let age = today.getFullYear() - birth.getFullYear();
-  const monthDiff = today.getMonth() - birth.getMonth();
-
-  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
-    age -= 1;
-  }
-
-  return age >= 0 ? age : null;
-}
-
+ 
 export const UserSection: FC<UserSectionProps> = ({
   title,
-  users,
+  items,
   actionText = "Смотреть все",
   onActionClick,
   emptyMessage = "Пользователи не найдены",
@@ -59,72 +35,27 @@ export const UserSection: FC<UserSectionProps> = ({
   isSorted = false,
 }) => {
   const dispatch = useDispatch();
-  const skills = useSelector((state) => state.skills.data);
-  const subCategories = useSelector((state) => state.category.subCategories);
-  const categories = useSelector((state) => state.category.categories);
+  const [sortOrder, setSortOrder] = useState<"new" | "old">("new");
   const currentUser = useSelector((state) => state.auth.currentUser);
   const sentRequests = useSelector((state) => state.requests.sent);
+  const favoriteIds = useSelector(selectFavoriteIds);
+  const categories = useSelector((state) => state.category.categories);
+  const subCategories = useSelector((state) => state.category.subCategories);
 
-  const [sortOrder, setSortOrder] = useState<"new" | "old">("new");
-
-  // Обработчик клика по ❤️
-  const handleFavoriteClick = (skillId: TId): void => {
+  const handleFavoriteClick = (skill: IPublicSkillCard): void => {
     if (!currentUser) {
       return;
     }
-
-    const isLiked = currentUser.likesSkillsIds.includes(skillId);
-
-    const nextLikesSkillsIds = isLiked
-      ? currentUser.likesSkillsIds.filter((id) => id !== skillId)
-      : [...currentUser.likesSkillsIds, skillId];
-
-    // Асинхронное обновление пользователей для автообновления selectPopularUsers в HomePage
-    (async () => {
-      await dispatch(
-        fetchUpdateCurrentUser({ likesSkillsIds: nextLikesSkillsIds }),
-      );
-    })();
+    const isCurrentlyFavorite = favoriteIds.includes(skill.id);
+    dispatch(toggleFavoriteSkill({ skill, isCurrentlyFavorite }));
   };
-
-  const usersWithSkillDate = users.map((user) => {
-    const skill = skills.find((s) => s.id === user.userSkill);
-    return {
-      ...user,
-      skillCreatedAt: skill?.createdAt || user.createdAt,
-    };
-  });
-
-  const preparedUsers: PreparedUser[] = usersWithSkillDate
-    .map((user) => {
-      const age = getAgeFromBirthDate(user.birthDate);
-      const canTeach = getSkillTitle(user.userSkill, skills);
-      const wantsToLearn = getSubcategoryNames(
-        user.interestedSkillsSubcategoriesIds,
-        subCategories,
-      );
-
-      return {
-        ...user,
-        age,
-        canTeach,
-        wantsToLearn,
-      };
-    })
-    .filter((user): user is PreparedUser => {
-      return (
-        Boolean(user.name?.trim()) &&
-        Boolean(user.city?.trim()) &&
-        user.age !== null &&
-        user.age >= 14 &&
-        user.userSkill !== null &&
-        user.userSkill !== undefined &&
-        Boolean(user.canTeach?.trim()) &&
-        user.wantsToLearn.length > 0
-      );
-    });
-
-  if (preparedUsers.length === 0) {
+ 
+  // Минимальный фильтр качества данных: скрываем карточки без имени автора
+  // (по документации API город/аватар/интересы могут быть null — это нормально
+  // и отображается пустым/дефолтным, а не скрывается).
+  const validItems = items.filter((item) => Boolean(item.user.name?.trim()));
+ 
+  if (validItems.length === 0) {
     return (
       <section className={styles.section}>
         <SkillCardGroupHeader
@@ -136,41 +67,38 @@ export const UserSection: FC<UserSectionProps> = ({
           sortOrder={sortOrder}
           setSortOrder={setSortOrder}
         />
-
+ 
         <p className={styles.emptyMessage}>{emptyMessage}</p>
       </section>
     );
   }
-
-  const cards: SkillCardProps[] = preparedUsers.map((user) => ({
-    id: user.id,
-    avatar: user.avatar,
-    name: user.name,
-    city: user.city,
-    age: user.age,
-    canTeach: user.canTeach,
-    wantsToLearn: user.wantsToLearn,
-    isFavorite: currentUser
-      ? currentUser.likesSkillsIds.includes(user.userSkill)
-      : false,
-    onFavoriteClick: () => handleFavoriteClick(user.userSkill),
-    teachColor: getTeachColor(
-      user.userSkill,
-      skills,
+ 
+  const cards: SkillCardProps[] = validItems.map((item) => ({
+    id: item.id,
+    avatar: item.user.avatar ? resolveAssetUrl(item.user.avatar) : userInfo,
+    name: item.user.name,
+    city: item.user.city?.name ?? "",
+    age: item.user.age ?? 0,
+    canTeach: item.title,
+    teachColor: getCategoryColorBySubcategoryId(
+      item.categoryId ?? undefined,
       subCategories,
       categories,
     ),
+    wantsToLearn: (item.user.wantToLearn ?? []).map((w) => w.name),
     wantsToLearnColors: getLearnColors(
-      user.interestedSkillsSubcategoriesIds,
+      (item.user.wantToLearn ?? []).map((w) => w.id),
       subCategories,
       categories,
     ),
-    disableDetails: String(user.id) === String(currentUser?.id),
+    isFavorite: favoriteIds.includes(item.id),
+    onFavoriteClick: () => handleFavoriteClick(item),
+    disableDetails: String(item.user.id) === String(currentUser?.id),
     exchangeProposed: sentRequests.some(
-      (request) => String(request.requiredSkillUserId) === String(user.id),
+      (request) => String(request.requiredSkillUserId) === String(item.user.id),
     ),
   }));
-
+ 
   return (
     <section className={styles.section}>
       {viewMode === "slider" ? (

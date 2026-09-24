@@ -24,7 +24,7 @@ const makeUser = (
   email: `${overrides.id}@test.com`,
   name: overrides.id,
   birthDate: "2000-01-01",
-  gender: "unspecified",
+  gender: "UNSPECIFIED",
   city: "Moscow",
   avatar: "a.png",
   likesSkillsIds: [],
@@ -40,7 +40,7 @@ const makeSkill = (overrides: Partial<ISkill> & { id: string }): ISkill => ({
   description: "Desc",
   skillSubcategory: "sub-1",
   images: [],
-  userId: "user-1",
+  user: { id: "user-1" },
   createdAt: "2024-01-01T00:00:00.000Z",
   updatedAt: "2024-01-01T00:00:00.000Z",
   ...overrides,
@@ -184,9 +184,9 @@ describe("selectNewestUsers", () => {
 //selectRecommendedUsers
 describe("selectRecommendedUsers", () => {
   const skills = [
-    makeSkill({ id: "skill-1", skillSubcategory: "sub-a", userId: "u1" }),
-    makeSkill({ id: "skill-2", skillSubcategory: "sub-b", userId: "u2" }),
-    makeSkill({ id: "skill-3", skillSubcategory: "sub-a", userId: "u3" }),
+    makeSkill({ id: "skill-1", skillSubcategory: "sub-a", user: { id: "u1" } }),
+    makeSkill({ id: "skill-2", skillSubcategory: "sub-b", user: { id: "u2" } }),
+    makeSkill({ id: "skill-3", skillSubcategory: "sub-a", user: { id: "u3" } }),
   ];
 
   it("без авторизации возвращает 9 случайных пользователей", () => {
@@ -240,46 +240,52 @@ describe("selectRecommendedUsers", () => {
 //selectSimilarUsers
 describe("selectSimilarUsers", () => {
   const skills = [
-    makeSkill({ id: "skill-1", skillSubcategory: "sub-a", userId: "u1" }),
-    makeSkill({ id: "skill-2", skillSubcategory: "sub-a", userId: "u2" }),
-    makeSkill({ id: "skill-3", skillSubcategory: "sub-b", userId: "u3" }),
+    makeSkill({
+      id: "skill-1",
+      skillSubcategory: "sub-a",
+      user: { id: "u1", name: "Автор" },
+    }),
+    makeSkill({
+      id: "skill-2",
+      skillSubcategory: "sub-a",
+      user: { id: "u2", name: "Похожий" },
+    }),
+    makeSkill({
+      id: "skill-3",
+      skillSubcategory: "sub-b",
+      user: { id: "u3", name: "Другая подкатегория" },
+    }),
   ];
 
-  it("возвращает пользователей с навыком из той же подкатегории", () => {
-    const selectedUser = makeUser({ id: "u1", userSkill: "skill-1" });
-    const users = [
-      selectedUser,
-      makeUser({ id: "u2", userSkill: "skill-2" }),
-      makeUser({ id: "u3", userSkill: "skill-3" }),
-    ];
-    const state = buildState({ users, selectedUser, skills });
-    const result = selectSimilarUsers(state);
+  it("возвращает авторов навыков из той же подкатегории, кроме запрошенного навыка", () => {
+    const state = buildState({ skills });
+    const result = selectSimilarUsers(state, "skill-1");
 
     expect(result).toHaveLength(1);
     expect(result[0].id).toBe("u2");
+    expect(result[0].userSkill).toBe("skill-2");
   });
 
-  it("исключает самого выбранного пользователя", () => {
-    const selectedUser = makeUser({ id: "u1", userSkill: "skill-1" });
-    const users = [selectedUser];
-    const state = buildState({ users, selectedUser, skills });
+  it("исключает другие навыки того же автора", () => {
+    const sameAuthorSkills = [
+      makeSkill({ id: "skill-1", skillSubcategory: "sub-a", user: { id: "u1" } }),
+      makeSkill({ id: "skill-4", skillSubcategory: "sub-a", user: { id: "u1" } }),
+    ];
+    const state = buildState({ skills: sameAuthorSkills });
 
-    expect(selectSimilarUsers(state)).toHaveLength(0);
+    expect(selectSimilarUsers(state, "skill-1")).toHaveLength(0);
   });
 
-  it("возвращает пустой массив если нет selectedUser", () => {
-    const users = [makeUser({ id: "u1", userSkill: "skill-1" })];
-    const state = buildState({ users, selectedUser: null, skills });
+  it("возвращает пустой массив если skillId не передан", () => {
+    const state = buildState({ skills });
 
     expect(selectSimilarUsers(state)).toEqual([]);
   });
 
-  it("возвращает пустой массив если навык selectedUser не найден", () => {
-    const selectedUser = makeUser({ id: "u1", userSkill: "nonexistent" });
-    const users = [selectedUser];
-    const state = buildState({ users, selectedUser, skills });
+  it("возвращает пустой массив если навык с указанным id не найден", () => {
+    const state = buildState({ skills });
 
-    expect(selectSimilarUsers(state)).toEqual([]);
+    expect(selectSimilarUsers(state, "nonexistent")).toEqual([]);
   });
 });
 
@@ -310,8 +316,8 @@ describe("selectFilteredBySkillTitle", () => {
 
   it("фильтрует по gender", () => {
     const usersWithGender = [
-      makeUser({ id: "u1", userSkill: "skill-1", gender: "male" }),
-      makeUser({ id: "u2", userSkill: "skill-2", gender: "female" }),
+      makeUser({ id: "u1", userSkill: "skill-1", gender: "MALE" }),
+      makeUser({ id: "u2", userSkill: "skill-2", gender: "FEMALE" }),
     ];
     const state = buildState({
       users: usersWithGender,

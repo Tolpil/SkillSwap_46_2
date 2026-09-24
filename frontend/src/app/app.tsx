@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { fetchProfile } from "../services/auth/actions";
+import { fetchFavoriteSkills } from "../services/favorites/actions";
 import { useDispatch, useSelector } from "../services/store";
 import { router } from "./routes";
 import { ThemeProvider } from "./theme-provider";
@@ -11,7 +12,11 @@ function App() {
   const currentUser = useSelector((state) => state.auth.currentUser);
 
   useEffect(() => {
-    if (!currentUser) dispatch(fetchProfile());
+    if (!currentUser) {
+      dispatch(fetchProfile());
+    } else {
+      dispatch(fetchFavoriteSkills());
+    }
   }, [dispatch, currentUser]);
 
   return (

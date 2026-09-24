@@ -3,7 +3,7 @@ import {
   ConflictException,
   NotFoundException,
 } from '@nestjs/common';
-import { FindManyOptions, ILike, Repository } from 'typeorm';
+import { FindManyOptions, ILike, IsNull, Not, Repository } from 'typeorm';
 import { CitiesService } from './cities.service';
 import { City } from './entities/city.entity';
 
@@ -63,7 +63,7 @@ describe('CitiesService', () => {
     it('filters cities by name using case-insensitive partial search', async () => {
       cityRepository.find.mockResolvedValue([]);
 
-      await service.search('моск');
+      await service.search({ search: 'моск' });
 
       const options = cityRepository.find.mock
         .calls[0][0] as FindManyOptions<City>;
@@ -94,7 +94,58 @@ describe('CitiesService', () => {
 
       cityRepository.find.mockResolvedValue(cities);
 
-      await expect(service.search('ир')).resolves.toEqual(cities);
+      await expect(service.search({ search: 'ир' })).resolves.toEqual(cities);
+    });
+  });
+
+  describe('search major mode', () => {
+    it('returns only major cities sorted by sortOrder', async () => {
+      const majorCities = [
+        { id: 'moscow-id', name: 'Москва', region: 'Москва' },
+        { id: 'spb-id', name: 'Санкт-Петербург', region: 'Санкт-Петербург' },
+      ] as City[];
+
+      cityRepository.find.mockResolvedValue(majorCities);
+
+      await expect(service.search({ major: true })).resolves.toEqual(
+        majorCities,
+      );
+
+      expect(cityRepository.find).toHaveBeenCalledWith({
+        select: ['id', 'name', 'region'],
+        where: {
+          sortOrder: Not(IsNull()),
+        },
+        order: { sortOrder: 'ASC' },
+      });
+    });
+
+    it('combines major filter with search by name', async () => {
+      cityRepository.find.mockResolvedValue([]);
+
+      await service.search({ major: true, search: 'мос' });
+
+      expect(cityRepository.find).toHaveBeenCalledWith({
+        select: ['id', 'name', 'region'],
+        where: {
+          sortOrder: Not(IsNull()),
+          name: ILike('%мос%'),
+        },
+        order: { sortOrder: 'ASC' },
+      });
+    });
+
+    it('ignores major mode when major is false and applies alphabetical order', async () => {
+      cityRepository.find.mockResolvedValue([]);
+
+      await service.search({ major: false });
+
+      expect(cityRepository.find).toHaveBeenCalledWith({
+        select: ['id', 'name', 'region'],
+        where: {},
+        order: { name: 'ASC' },
+        take: 10,
+      });
     });
   });
 

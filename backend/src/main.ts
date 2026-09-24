@@ -8,17 +8,29 @@ import cookieParser from 'cookie-parser';
 import { appConfig } from './config/app.config';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { join } from 'path';
+import helmet from 'helmet';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  app.use(
+    helmet({
+      crossOriginResourcePolicy: { policy: 'cross-origin' },
+      contentSecurityPolicy: false,
+    }),
+  );
   app.setGlobalPrefix('api');
   const applicationConfiguration = app.get<ConfigType<typeof appConfig>>(
     appConfig.KEY,
   );
-  app.useStaticAssets(join(__dirname, '..', 'public'), {
+
+  app.useStaticAssets(join(process.cwd(), 'public'), {
     prefix: '/public',
   });
 
+  app.enableCors({
+    origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+    credentials: true,
+  });
   app.use(cookieParser());
   app.useGlobalFilters(new AllExceptionFilter());
   app.useGlobalInterceptors(new ClassSerializerInterceptor(app.get(Reflector)));

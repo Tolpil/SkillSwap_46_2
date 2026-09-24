@@ -12,7 +12,6 @@ interface GetActiveFiltersParams {
   categories: ISkillsCategory[];
   skillOptions: { value: string; label: string }[];
   genderOptions: { value: string; label: string }[];
-  cityLabels: Record<string, string>;
 }
 
 export const getActiveFilters = ({
@@ -20,7 +19,6 @@ export const getActiveFilters = ({
   categories,
   skillOptions,
   genderOptions,
-  cityLabels,
 }: GetActiveFiltersParams): ActiveFilterItem[] => {
   const filters: ActiveFilterItem[] = [];
 
@@ -44,10 +42,10 @@ export const getActiveFilters = ({
     });
   }
 
-  filterState.cities.forEach((cityId) => {
+  filterState.cities.forEach((cityName) => {
     filters.push({
-      id: cityId,
-      label: cityLabels[cityId] ?? cityId,
+      id: cityName,
+      label: cityName,
       type: "city",
     });
   });
