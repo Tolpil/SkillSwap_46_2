@@ -1,0 +1,57 @@
+name: Build and Push Docker Images
+
+on:
+  push:
+    branches: [main, dev-sealexe-deploy]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  BACKEND_IMAGE: ghcr.io/pr-month/skillswap-backend
+  FRONTEND_IMAGE: ghcr.io/pr-month/skillswap-frontend
+  NGINX_IMAGE: ghcr.io/pr-month/skillswap-nginx
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push backend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile.prod
+          push: true
+          tags: ${{ env.BACKEND_IMAGE }}:latest
+
+      - name: Build and push frontend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile.prod
+          push: true
+          build-args: |
+            VITE_API_URL=${{ vars.VITE_API_URL }}
+          tags: ${{ env.FRONTEND_IMAGE }}:latest
+
+      - name: Build and push nginx
+        uses: docker/build-push-action@v6
+        with:
+          context: ./nginx
+          push: true
+          tags: ${{ env.NGINX_IMAGE }}:latest
