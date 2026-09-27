@@ -23,6 +23,15 @@ describe('AppController (e2e)', () => {
 
   it('/ (GET)', () => {
     const server = app.getHttpServer() as Express;
-    return request(server).get('/').expect(200).expect('Hello World!');
+    return request(server).get('/').expect(200).expect('SkillSwap API is running');
+  });
+
+  it('/health (GET)', async () => {
+    const server = app.getHttpServer() as Express;
+    const res = await request(server).get('/health').expect(200);
+
+    expect(res.body).toMatchObject({ status: 'ok' });
+    expect(typeof res.body.uptime).toBe('number');
+    expect(new Date(res.body.timestamp).getTime()).not.toBeNaN();
   });
 });

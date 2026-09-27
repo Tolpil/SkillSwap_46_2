@@ -15,8 +15,18 @@ describe('AppController', () => {
   });
 
   describe('root', () => {
-    it('should return "Hello World!"', () => {
-      expect(appController.getHello()).toBe('Hello World!');
+    it('should return service name', () => {
+      expect(appController.getHello()).toBe('SkillSwap API is running');
+    });
+  });
+
+  describe('health', () => {
+    it('should return ok status with uptime and timestamp', () => {
+      const health = appController.getHealth();
+
+      expect(health.status).toBe('ok');
+      expect(health.uptime).toBeGreaterThanOrEqual(0);
+      expect(new Date(health.timestamp).getTime()).not.toBeNaN();
     });
   });
 });
