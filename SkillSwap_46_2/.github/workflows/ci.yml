@@ -113,6 +113,7 @@ jobs:
 
     env:
       NODE_ENV: test
+      PORT: 3000
       DB_DRIVER: postgres
       DB_HOST: localhost
       DB_PORT: 5432
@@ -126,6 +127,7 @@ jobs:
       JWT_REFRESH_EXPIRES_IN: 604800
       ADMIN_EMAIL: admin@example.com
       ADMIN_PASSWORD: admin12345
+      FRONTEND_URL: http://localhost:5173
 
     steps:
       - name: Checkout code

@@ -8,6 +8,7 @@ import { appConfig } from './config/app.config';
 import { jwtConfig } from './config/jwt.config';
 import { dbConfig, TDbConfig, getEnvFilePath } from './config/db.config';
 import { mailConfig } from './config/mail.config';
+import { validateEnv } from './config/env.validation';
 import { MailModule } from './mail/mail.module';
 import { UsersModule } from './users/users.module';
 import { SkillsModule } from './skills/skills.module';
@@ -24,6 +25,9 @@ import { APP_GUARD } from '@nestjs/core';
       isGlobal: true,
       load: [appConfig, dbConfig, jwtConfig, mailConfig],
       envFilePath: getEnvFilePath(),
+      // Проверяем переменные окружения при старте, чтобы не получить
+      // «магические» ошибки подключения посреди работы приложения
+      validate: validateEnv,
     }),
     TypeOrmModule.forRootAsync({
       inject: [dbConfig.KEY],
