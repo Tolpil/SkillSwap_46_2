@@ -150,7 +150,7 @@ export class RequestsService {
   ): Promise<Request> {
     const request = await this.requestsRepository.findOne({
       where: { id },
-      relations: ['receiver', 'sender', 'requestedSkill'],
+      relations: ['receiver', 'sender', 'requestedSkill', 'offeredSkill'],
     });
 
     if (!request) {
@@ -168,7 +168,24 @@ export class RequestsService {
     request.status = status;
     request.isRead = true;
 
-    const saved = await this.requestsRepository.save(request);
+    // Принятие заявки означает фактический обмен: предлагаемый навык
+    // переходит получателю, а запрашиваемый — отправителю. Смена владельцев
+    // и статуса выполняется в одной транзакции, чтобы избежать рассинхрона.
+    const saved = await this.requestsRepository.manager.transaction(
+      async (manager) => {
+        if (status === RequestStatus.ACCEPTED) {
+          const offeredSkill = request.offeredSkill;
+          const requestedSkill = request.requestedSkill;
+
+          offeredSkill.user = request.receiver;
+          requestedSkill.user = request.sender;
+
+          await manager.save([offeredSkill, requestedSkill]);
+        }
+
+        return manager.save(request);
+      },
+    );
 
     if (request.sender?.email) {
       const statusText =

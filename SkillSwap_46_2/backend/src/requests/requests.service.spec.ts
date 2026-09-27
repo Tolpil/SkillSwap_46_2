@@ -5,6 +5,7 @@ import { MailService } from '../mail/mail.service';
 import { NotificationsGateway } from '../notifications/notifications.gateway';
 import { Request } from './entities/request.entity';
 import { Skill } from '../skills/entities/skill.entity';
+import { RequestStatus } from './request-status.enums';
 
 describe('RequestsService', () => {
   let service: RequestsService;
@@ -22,9 +23,13 @@ describe('RequestsService', () => {
     getRepository: jest.fn((entity: unknown) =>
       entity === Skill ? skillRepo : requestRepoInTransaction,
     ),
+    save: jest.fn(),
   };
 
   const requestsRepository = {
+    findOne: jest.fn(),
+    save: jest.fn(),
+    delete: jest.fn(),
     manager: {
       transaction: jest.fn((cb: (m: unknown) => unknown) => cb(manager)),
     },
@@ -99,6 +104,67 @@ describe('RequestsService', () => {
         'Йога',
         'offered-skill-id',
       );
+    });
+  
+    describe('updateStatus', () => {
+      const receiver = { id: 'receiver-id', email: 'receiver@test.com' };
+      const sender = { id: 'sender-id', email: 'sender@test.com' };
+  
+      const buildRequest = (status = 'pending') => ({
+        id: 'request-id',
+        status,
+        isRead: false,
+        receiver,
+        sender,
+        offeredSkill: { id: 'offered-skill-id', title: 'Йога', user: sender },
+        requestedSkill: {
+          id: 'requested-skill-id',
+          title: 'Гитара',
+          user: receiver,
+        },
+      });
+  
+      beforeEach(() => {
+        manager.save.mockImplementation(async (value: unknown) => value);
+      });
+  
+      it('передаёт навыки владельцам при принятии заявки', async () => {
+        requestsRepository.findOne.mockResolvedValue(buildRequest());
+        manager.save.mockClear();
+  
+        await service.updateStatus(
+          'request-id',
+          'receiver-id',
+          RequestStatus.ACCEPTED,
+        );
+  
+        // Оба навыка сохраняются со сменёнными владельцами в одной транзакции
+        expect(manager.save).toHaveBeenCalledWith([
+          { id: 'offered-skill-id', title: 'Йога', user: receiver },
+          { id: 'requested-skill-id', title: 'Гитара', user: sender },
+        ]);
+  
+        // Статус заявки тоже обновляется внутри транзакции
+        expect(manager.save).toHaveBeenCalledWith(
+          expect.objectContaining({ id: 'request-id', status: 'accepted' }),
+        );
+      });
+  
+      it('не меняет владельцев при отклонении заявки', async () => {
+        requestsRepository.findOne.mockResolvedValue(buildRequest());
+        manager.save.mockClear();
+  
+        await service.updateStatus(
+          'request-id',
+          'receiver-id',
+          RequestStatus.REJECTED,
+        );
+  
+        expect(manager.save).toHaveBeenCalledTimes(1);
+        expect(manager.save).toHaveBeenCalledWith(
+          expect.objectContaining({ id: 'request-id', status: 'rejected' }),
+        );
+      });
     });
   });
 });
