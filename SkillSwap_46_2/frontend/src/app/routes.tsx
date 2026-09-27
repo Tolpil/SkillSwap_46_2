@@ -5,6 +5,7 @@ import { Register } from "../pages/register";
 import { SkillPage } from "../pages/skill-page/skill-page";
 import { ForgotPassword } from "../pages/password-recovery/forgot-password";
 import { ResetPassword } from "../pages/password-recovery/reset-password";
+import { ConfirmEmail } from "../pages/confirm-email/confirm-email";
 import { ErrorDetails } from "../widgets/error-details/error-details";
 import { Layout } from "../widgets/layout";
 import { errorConfig } from "./error-config";
@@ -93,6 +94,10 @@ export const router = createBrowserRouter([
       {
         path: "/reset-password",
         element: <ResetPassword />,
+      },
+      {
+        path: "/confirm-email",
+        element: <ConfirmEmail />,
       },
     ],
   },

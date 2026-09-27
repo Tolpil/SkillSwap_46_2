@@ -52,6 +52,9 @@ export class User {
   @Column({ type: 'enum', enum: Role, default: Role.USER })
   role: Role;
 
+  @Column({ type: 'boolean', default: false })
+  isEmailConfirmed: boolean;
+
   @Exclude()
   @Column({ select: false, nullable: true, type: 'text' })
   refreshToken: string | null;

@@ -9,6 +9,8 @@ import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { ConfirmEmailDto } from './dto/confirm-email.dto';
+import { ResendConfirmationDto } from './dto/resend-confirmation.dto';
 
 export function ApiAuthLogin() {
   return applyDecorators(
@@ -108,5 +110,25 @@ export function ApiAuthResetPassword() {
       status: 400,
       description: 'Ссылка недействительна, истекла или пользователь не найден',
     }),
+  );
+}
+
+export function ApiAuthConfirmEmail() {
+  return applyDecorators(
+    ApiOperation({ summary: 'Подтверждение email по токену из письма' }),
+    ApiBody({ type: ConfirmEmailDto }),
+    ApiResponse({ status: 200, description: 'Email подтверждён' }),
+    ApiResponse({
+      status: 400,
+      description: 'Ссылка недействительна, истекла или пользователь не найден',
+    }),
+  );
+}
+
+export function ApiAuthResendConfirmation() {
+  return applyDecorators(
+    ApiOperation({ summary: 'Повторная отправка письма подтверждения' }),
+    ApiBody({ type: ResendConfirmationDto }),
+    ApiResponse({ status: 200, description: 'Письмо отправлено' }),
   );
 }

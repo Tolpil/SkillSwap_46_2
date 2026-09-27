@@ -27,15 +27,19 @@ import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { ConfirmEmailDto } from './dto/confirm-email.dto';
+import { ResendConfirmationDto } from './dto/resend-confirmation.dto';
 import { Role } from '../shared/enums/role.enum';
 import { ApiTags } from '@nestjs/swagger';
 import {
   ApiAuthCheckUser,
+  ApiAuthConfirmEmail,
   ApiAuthForgotPassword,
   ApiAuthLogin,
   ApiAuthLogout,
   ApiAuthRefresh,
   ApiAuthRegister,
+  ApiAuthResendConfirmation,
   ApiAuthResetPassword,
 } from './auth.swagger';
 
@@ -122,6 +126,20 @@ export class AuthController {
   @ApiAuthResetPassword()
   async resetPassword(@Body() dto: ResetPasswordDto) {
     return this.authService.resetPassword(dto);
+  }
+
+  @Post('confirm-email')
+  @HttpCode(HttpStatus.OK)
+  @ApiAuthConfirmEmail()
+  async confirmEmail(@Body() dto: ConfirmEmailDto) {
+    return this.authService.confirmEmail(dto);
+  }
+
+  @Post('resend-confirmation')
+  @HttpCode(HttpStatus.OK)
+  @ApiAuthResendConfirmation()
+  async resendConfirmation(@Body() dto: ResendConfirmationDto) {
+    return this.authService.resendConfirmation(dto);
   }
 
   private setAuthCookies(

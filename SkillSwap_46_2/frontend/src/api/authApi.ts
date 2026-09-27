@@ -154,3 +154,33 @@ export const resetPassword = async (
     body: JSON.stringify({ token, newPassword }),
   });
 };
+
+// POST /auth/confirm-email — подтверждение email по токену из письма
+export const confirmEmail = async (
+  token: string,
+): Promise<{ message: string }> => {
+  if (USE_MOCKS) {
+    return { message: "Email подтверждён" };
+  }
+
+  return request<{ message: string }>("/auth/confirm-email", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token }),
+  });
+};
+
+// POST /auth/resend-confirmation — повторная отправка письма подтверждения
+export const resendConfirmation = async (
+  email: string,
+): Promise<{ message: string }> => {
+  if (USE_MOCKS) {
+    return { message: "Письмо отправлено" };
+  }
+
+  return request<{ message: string }>("/auth/resend-confirmation", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email }),
+  });
+};

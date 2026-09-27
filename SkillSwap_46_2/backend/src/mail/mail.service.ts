@@ -100,4 +100,23 @@ export class MailService implements OnModuleInit {
       text: payload.text,
     });
   }
+
+  async sendEmailConfirmation(
+    email: string,
+    confirmationLink: string,
+  ): Promise<void> {
+    await this.sendEmail({
+      to: email,
+      subject: 'Подтверждение email SkillSwap',
+      html: [
+        '<div style="font-family: Arial, sans-serif; line-height: 1.5">',
+        '<h2>Подтвердите ваш email</h2>',
+        `<p>Для подтверждения адреса перейдите по ссылке:</p>`,
+        `<p><a href="${confirmationLink}">Подтвердить email</a></p>`,
+        '<p>Ссылка действительна в течение 24 часов.</p>',
+        '<p>Если вы не регистрировались на SkillSwap, проигнорируйте это письмо.</p>',
+        '</div>',
+      ].join(''),
+    });
+  }
 }

@@ -8,7 +8,9 @@ import {
   Optional,
 } from '@nestjs/common';
 import { MailService } from '../mail/mail.service';
+import { ConfirmEmailDto } from './dto/confirm-email.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResendConfirmationDto } from './dto/resend-confirmation.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { ConfigType } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
@@ -163,6 +165,13 @@ export class AuthService {
       });
       user.refreshToken = refreshToken;
       await this.userRepository.save(user);
+
+      // Письмо с подтверждением отправляем без блокировки регистрации:
+      // если SMTP недоступен, пользователь всё равно сможет войти.
+      void this.sendConfirmationLetter(user).catch((err: unknown) => {
+        console.error('Confirmation email was not sent:', err);
+      });
+
       return {
         user: {
           id: user.id,
@@ -233,6 +242,83 @@ export class AuthService {
       user.refreshToken = null;
       await this.userRepository.save(user);
     }
+  }
+
+  /**
+   * Отправка письма с подтверждением email. Ошибки почты не должны
+   * блокировать регистрацию, поэтому вызов всегда оборачивается в try/catch.
+   */
+  private async sendConfirmationLetter(user: User): Promise<void> {
+    if (!this.mailService) {
+      return;
+    }
+
+    const token = await this.jwtService.signAsync(
+      { sub: user.id, email: user.email, type: 'email_confirmation' },
+      {
+        secret: this.jwtConfiguration.accessSecret,
+        expiresIn: '24h',
+      },
+    );
+
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const confirmationLink = `${frontendUrl}/confirm-email?token=${token}`;
+
+    await this.mailService.sendEmailConfirmation(user.email, confirmationLink);
+  }
+
+  /** Подтверждение email по одноразовому токену из письма. */
+  async confirmEmail(dto: ConfirmEmailDto): Promise<{ message: string }> {
+    let payload: { sub: string; type?: string };
+
+    try {
+      payload = await this.jwtService.verifyAsync<{
+        sub: string;
+        type?: string;
+      }>(dto.token, {
+        secret: this.jwtConfiguration.accessSecret,
+      });
+    } catch {
+      throw new BadRequestException('Ссылка недействительна или истекла');
+    }
+
+    if (payload.type !== 'email_confirmation') {
+      throw new BadRequestException('Ссылка недействительна или истекла');
+    }
+
+    const user = await this.userRepository.findOne({
+      where: { id: payload.sub },
+    });
+
+    if (!user) {
+      throw new BadRequestException('Пользователь не найден');
+    }
+
+    user.isEmailConfirmed = true;
+    await this.userRepository.save(user);
+
+    return { message: 'Email подтверждён' };
+  }
+
+  /** Повторная отправка письма с подтверждением. */
+  async resendConfirmation(
+    dto: ResendConfirmationDto,
+  ): Promise<{ message: string }> {
+    const user = await this.userRepository.findOne({
+      where: { email: dto.email },
+    });
+
+    if (!user) {
+      return { message: 'Письмо отправлено' };
+    }
+
+    if (user.isEmailConfirmed) {
+      return { message: 'Email уже подтверждён' };
+    }
+
+    await this.sendConfirmationLetter(user);
+
+    return { message: 'Письмо отправлено' };
   }
 
   /**
