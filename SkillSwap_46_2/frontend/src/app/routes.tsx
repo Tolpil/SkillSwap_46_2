@@ -3,6 +3,8 @@ import { HomePage } from "../pages/HomePage";
 import { Login } from "../pages/login";
 import { Register } from "../pages/register";
 import { SkillPage } from "../pages/skill-page/skill-page";
+import { ForgotPassword } from "../pages/password-recovery/forgot-password";
+import { ResetPassword } from "../pages/password-recovery/reset-password";
 import { ErrorDetails } from "../widgets/error-details/error-details";
 import { Layout } from "../widgets/layout";
 import { errorConfig } from "./error-config";
@@ -83,6 +85,14 @@ export const router = createBrowserRouter([
       {
         path: "/login",
         element: <Login />,
+      },
+      {
+        path: "/forgot-password",
+        element: <ForgotPassword />,
+      },
+      {
+        path: "/reset-password",
+        element: <ResetPassword />,
       },
     ],
   },

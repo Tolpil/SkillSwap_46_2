@@ -123,3 +123,34 @@ export const logoutUser = async (): Promise<void> => {
   if (USE_MOCKS) return;
   await request<void>("/auth/logout", { method: "POST" });
 };
+
+// POST /auth/forgot-password — запрос ссылки для восстановления пароля
+export const forgotPassword = async (
+  email: string,
+): Promise<{ message: string }> => {
+  if (USE_MOCKS) {
+    return { message: "Если аккаунт существует, письмо отправлено" };
+  }
+
+  return request<{ message: string }>("/auth/forgot-password", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email }),
+  });
+};
+
+// POST /auth/reset-password — смена пароля по одноразовому токену
+export const resetPassword = async (
+  token: string,
+  newPassword: string,
+): Promise<{ message: string }> => {
+  if (USE_MOCKS) {
+    return { message: "Пароль успешно изменён" };
+  }
+
+  return request<{ message: string }>("/auth/reset-password", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token, newPassword }),
+  });
+};

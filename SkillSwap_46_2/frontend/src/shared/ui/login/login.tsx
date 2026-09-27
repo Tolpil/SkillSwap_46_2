@@ -105,6 +105,10 @@ export const LoginUI: FC<LoginUIProps> = ({
               Войти
             </Button>
 
+            <Link to="/forgot-password" className={styles.registration__link}>
+              Забыли пароль?
+            </Link>
+
             <Link to="/registration" className={styles.registration__link}>
               Зарегистрироваться
             </Link>

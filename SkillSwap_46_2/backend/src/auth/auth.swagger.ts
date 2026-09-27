@@ -7,6 +7,8 @@ import {
 } from '@nestjs/swagger';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 
 export function ApiAuthLogin() {
   return applyDecorators(
@@ -79,5 +81,32 @@ export function ApiAuthCheckUser() {
       description: 'Пользователь найден и пароль корректен',
     }),
     ApiResponse({ status: 401, description: 'Неверный email или пароль' }),
+  );
+}
+
+export function ApiAuthForgotPassword() {
+  return applyDecorators(
+    ApiOperation({ summary: 'Запрос ссылки для восстановления пароля' }),
+    ApiBody({ type: ForgotPasswordDto }),
+    ApiResponse({
+      status: 200,
+      description:
+        'Письмо со ссылкой отправлено (ответ одинаковый независимо от наличия аккаунта)',
+    }),
+  );
+}
+
+export function ApiAuthResetPassword() {
+  return applyDecorators(
+    ApiOperation({ summary: 'Сброс пароля по одноразовому токену' }),
+    ApiBody({ type: ResetPasswordDto }),
+    ApiResponse({
+      status: 200,
+      description: 'Пароль успешно изменён, все сессии завершены',
+    }),
+    ApiResponse({
+      status: 400,
+      description: 'Ссылка недействительна, истекла или пользователь не найден',
+    }),
   );
 }

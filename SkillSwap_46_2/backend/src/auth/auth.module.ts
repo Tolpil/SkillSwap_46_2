@@ -10,6 +10,7 @@ import { WsJwtGuard } from './guards/ws-jwt.guard';
 import { AccessTokenStrategy } from './strategies/accessToken.strategy';
 import { RefreshTokenStrategy } from './strategies/refreshToken.strategy';
 import { jwtConfig } from '../config/jwt.config';
+import { MailModule } from '../mail/mail.module';
 import { UsersModule } from '../users/users.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { User } from '../users/entities/user.entity';
@@ -22,6 +23,7 @@ import { YandexStrategy } from './oauth/yandex.strategy';
   imports: [
     PassportModule,
     ConfigModule.forFeature(yandexOAuthConfig),
+    MailModule,
     UsersModule,
     TypeOrmModule.forFeature([User, City]),
     JwtModule.registerAsync({

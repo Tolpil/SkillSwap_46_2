@@ -25,14 +25,18 @@ import {
 } from './auth.types';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import { Role } from '../shared/enums/role.enum';
 import { ApiTags } from '@nestjs/swagger';
 import {
   ApiAuthCheckUser,
+  ApiAuthForgotPassword,
   ApiAuthLogin,
   ApiAuthLogout,
   ApiAuthRefresh,
   ApiAuthRegister,
+  ApiAuthResetPassword,
 } from './auth.swagger';
 
 @ApiTags('auth')
@@ -104,6 +108,20 @@ export class AuthController {
   @ApiAuthCheckUser()
   async checkUser(@Body() loginDto: LoginDto) {
     return this.authService.checkUser(loginDto);
+  }
+
+  @Post('forgot-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiAuthForgotPassword()
+  async forgotPassword(@Body() dto: ForgotPasswordDto) {
+    return this.authService.forgotPassword(dto);
+  }
+
+  @Post('reset-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiAuthResetPassword()
+  async resetPassword(@Body() dto: ResetPasswordDto) {
+    return this.authService.resetPassword(dto);
   }
 
   private setAuthCookies(

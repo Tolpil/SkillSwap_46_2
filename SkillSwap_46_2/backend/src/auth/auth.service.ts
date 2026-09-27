@@ -5,7 +5,11 @@ import {
   BadRequestException,
   Inject,
   InternalServerErrorException,
+  Optional,
 } from '@nestjs/common';
+import { MailService } from '../mail/mail.service';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import { ConfigType } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { jwtConfig } from '../config/jwt.config';
@@ -31,6 +35,8 @@ export class AuthService {
     private readonly jwtService: JwtService,
     @Inject(jwtConfig.KEY)
     private readonly jwtConfiguration: ConfigType<typeof jwtConfig>,
+    @Optional()
+    private readonly mailService?: MailService,
   ) {}
 
   private generateTokens(user: { id: string; email: string; role: Role }) {
@@ -227,6 +233,91 @@ export class AuthService {
       user.refreshToken = null;
       await this.userRepository.save(user);
     }
+  }
+
+  /**
+   * Запрос на восстановление пароля. Письмо отправляется всегда одинаковым
+   * текстом, чтобы нельзя было определить, зарегистрирован ли email.
+   */
+  async forgotPassword(
+    dto: ForgotPasswordDto,
+  ): Promise<{ message: string }> {
+    const message = 'Если аккаунт с таким email существует, письмо отправлено';
+
+    const user = await this.userRepository.findOne({
+      where: { email: dto.email },
+    });
+
+    if (!user) {
+      return { message };
+    }
+
+    if (!this.mailService) {
+      throw new InternalServerErrorException('Почтовый сервис не настроен');
+    }
+
+    const token = await this.jwtService.signAsync(
+      { sub: user.id, email: user.email, type: 'password_reset' },
+      {
+        secret: this.jwtConfiguration.accessSecret,
+        expiresIn: '1h',
+      },
+    );
+
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const resetLink = `${frontendUrl}/reset-password?token=${token}`;
+
+    await this.mailService.sendEmail({
+      to: user.email,
+      subject: 'Восстановление пароля SkillSwap',
+      html: [
+        '<div style="font-family: Arial, sans-serif; line-height: 1.5">',
+        '<h2>Восстановление пароля</h2>',
+        `<p>Для смены пароля перейдите по ссылке:</p>`,
+        `<p><a href="${resetLink}">Сменить пароль</a></p>`,
+        '<p>Ссылка действительна в течение 1 часа.</p>',
+        '<p>Если вы не запрашивали смену пароля, просто проигнорируйте это письмо.</p>',
+        '</div>',
+      ].join(''),
+    });
+
+    return { message };
+  }
+
+  /** Сброс пароля по одноразовому токену из письма. */
+  async resetPassword(dto: ResetPasswordDto): Promise<{ message: string }> {
+    let payload: { sub: string; type?: string };
+
+    try {
+      payload = await this.jwtService.verifyAsync<{
+        sub: string;
+        type?: string;
+      }>(dto.token, {
+        secret: this.jwtConfiguration.accessSecret,
+      });
+    } catch {
+      throw new BadRequestException('Ссылка недействительна или истекла');
+    }
+
+    if (payload.type !== 'password_reset') {
+      throw new BadRequestException('Ссылка недействительна или истекла');
+    }
+
+    const user = await this.userRepository.findOne({
+      where: { id: payload.sub },
+    });
+
+    if (!user) {
+      throw new BadRequestException('Пользователь не найден');
+    }
+
+    user.password = await bcrypt.hash(dto.newPassword, 10);
+    // После смены пароля завершаем все активные сессии
+    user.refreshToken = null;
+
+    await this.userRepository.save(user);
+
+    return { message: 'Пароль успешно изменён' };
   }
 
   async refreshFromPayload(
